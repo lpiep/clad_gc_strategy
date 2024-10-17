@@ -1,0 +1,459 @@
+---
+title: "Geocoder Evaluation"
+format:
+  html:
+    toc: true
+execute-dir: project
+bibliography: citations.bib
+---
+
+```{r}
+#| include: false
+#| warning: false
+#| message: false
+#| 
+library(tidyverse)
+library(sf)
+library(tigris)
+library(kableExtra)
+library(glue)
+
+compare <- read_rds('data/geocode_comparison_clean.rds')
+input <- read_rds('data/reference_locs.rds')
+n_excluded <- compare %>% select(id, input_qc_fail) %>% distinct() %>% pull(input_qc_fail) %>% sum()
+n_included <- compare %>% select(id, input_qc_fail) %>% distinct() %>% pull(input_qc_fail) %>% `!`() %>% sum()
+```
+
+## Introduction
+
+This document outlines the results of a performance evaluation of three geocoders to be used by the All Of Us Center for Linkage and Acquisition of Data (CLAD) geocoding milestone, and considers two approaches for integrating their results.
+
+We implemented three geocoders which met CLAD's specific requirements, namely:
+
+1. Can be deployed in the Palantir Foundry environment within a Docker container
+2. Can operate without an internet connection
+2. Cover the United States
+
+We considered multiple geocoders (see [Geocoding Requirements D.08.01 Appendix 1](https://docs.google.com/document/d/1F-woq9EY1Oa712KZBapUbf5sFoPGbhDqvIzHIJuC7cI/edit?tab=t.0#heading=h.dv0iytdnmoo4)) and selected Nominatim, Degauss, and PostGIS as potentially feasible to implement and meeting the project requirements. 
+
+## Methods
+
+### Reference Data Description
+
+Multiple shapefiles from HIFLD were downloaded that represent public or commercial buildings across the US, including hospitals, FDIC-insured banks, public schools, places of worship, etc. to get adequate coverage. From each respective shapefile, a full address string representing "street address, city, state, zip code" were aggregated and the centroid was calculated from the polygon shape for each data point. All these data points, or addresses, were concatenated into a single ESRI shapefile.
+ 
+With this ESRI shapefile, usaddress in Python was used to test parsing address components matching the USPS Publication 28 standard and OpenStreetMap convention for Nominatim. Using the respective centroids for each address, county names were determined by spatial join to the US county TIGER/Line shapefile. A second method was used to cross-validate the county names by merging to a zip code-county crosswalk file. 
+ 
+From these addresses, a custom flag function was written to determine if address parsing with usaddress was "successful". For example, PO boxes and addresses missing a "house number" were considered "failed".
+ 
+The input data set of `r nrow(input)` addresses contains a variety of public places with verified locations from the Homeland Infrastructure Foundation-Level Data data set. A copy is available [here](`github.com/brian-cy-chang/CLAD_Geospatial`). 
+
+After initial processing, we manually reviewed a small subset of the HIFLD data, and found the geographic locations to be generally accurate. As a _sanity check_ we checked that the geographic location in the data set fell into the same state listed in the address. `r n_excluded` failed this standard and were excluded. This did not appear to indicate systematically low accuracy in the reference geographic locations. Instead there seemed to have been errors in data transformation for particular areas (for example, a subset of addresses corresponding to a city in California all had geographic locations in Guam). 
+
+After removing clearly incorrect or missing addresses from the HIFLD data set, `r n_included` remained. 
+
+Despite some errors in the reference data set, we assume it is overall a reasonable representation of the true geographic locations of a set of addresses. 
+
+### Rural, Native Area, and Territory Classification
+
+As the All of Us cohort covers the entire United States and its territories and has a focus on underrepresented populations, we evaluated the performance of each geocoder in types of areas typically underrepresented in research: rural areas; US territories; and American Indian, Alaska Native, and Native Hawaiian (AIAN/NH) areas. 
+To identify reference addresses in rural areas, we used the USDA Rural-Urban Commuting Area Codes data set [@ruca_cite], which uses various population density, urbanization, and commute pattern metrics to classify areas by urbanness. 
+
+To identify reference addresses in AIAN/NH areas, we used maps developed by the FCC to determine eligibility for licenses to unassigned 2.5 GHz wireless spectrum  [@fcc_cite]. 
+
+_TO DO: how did we land on that one???_
+
+We combined these categories to create a single location classification variable (`loc_class`) as: 
+
+* `"territory"` if the point falls in a territory (there are no designated tribal areas in territories and not all territories received RUCA designations)
+* `"tribal"` if it falls in a AIAN/Native Hawaiian Area regardless of urbanicity
+* `"urban nontribal"` if the RUCA is 1, 2, or 3 and it falls in a state or DC outside of a tribal area
+* `"nonurban nontribal"` if the RUCA is not 1, 2, or 3 and it falls in a state or DC outside of a tribal area
+
+
+### Geocoding
+
+#### Degauss
+
+DeGAUSS [@degauss_cite] (Decentralized Geomarker Assessment for Multi-Site Studies) is a geocoder specifically engineered for epidemiological studies such as All of Us. It is deployed as a [docker container](https://degauss.org/geocoder/) and provides functionality to geocode US addresses against the US Census's TIGER database.  
+
+#### UW PostGIS 
+
+_To Do: How does UW postgis work?_
+
+#### Nominatim
+
+We used the Docker image available at `mediagis/nominatim-docker:4.4.0` to create a local instance of Nominatim. We used the following data source to populate our local Nominatim instance:
+https://download.geofabrik.de/north-america-latest.osm.pbf
+
+### Geocoding Performance Evaluation
+
+Goldberg [@goldberg_cite] lists the following criteria as standard metrics to evaluate geocoder performance: 
+
+* match rate: the overall percentage of addresses the geocoder successfully geocoded
+* match type: a categorical metric returned by the geocoder indicating geocode quality or confidence (e.g. parcel, street, intersection, Zip Code, or city) 
+* match score: a continuous metric returned by the geocoder indicating geocode quality or confidence (e.g. 0 - 100)
+* spatial accuracy: if the actual location of the address is known, the distance between it and the geocode
+* administrative unit concordance: whether geocoded location falls into same administrative unit (e.g. Census tract) as the actual location
+
+We calculated summaries for match rate, spatial accuracy, and administrative unit concordance with the assumption that the geographic location in the HIFLD data set represented the true location of the address. We chose 2020 Census tract as the administrative unit to investigate for concordance. Census tracts can be thought of of as analogs for neighborhoods, and vary widely in size depending on population density. 
+
+We also tabulated the match type and match score when they were returned by each geocoder, and compared these scores to the spatial accuracy in order to evaluate their usefulness. 
+
+### Combining Geocodes
+
+_To do: describe_
+
+
+## Results
+
+### Distribution of Reference Data
+
+The reference locations covered all states and DC. Puerto Rico and Guam each had several reference locations, while the US Virgin Islands and Northern Marianas each had a single reference location. The remainder of US territories did not have any reference locations.  
+
+We summarize the distribution of reference locations and their classifications below. 
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false 
+
+hifld <- compare %>% 
+  filter(!input_qc_fail) %>% 
+  select(id, tract_geoid_true, loc_class, geometry_true) %>%
+  distinct() %>% 
+  st_as_sf() %>%
+  mutate(
+    pane = case_when(
+      substr(tract_geoid_true, 1, 2) %in% c('78', '72') ~ 'Puerto Rico & USVI',
+      substr(tract_geoid_true, 1, 2) == '02' ~ 'Alaska', 
+      substr(tract_geoid_true, 1, 2) == '15' ~ 'Hawaii',
+      substr(tract_geoid_true, 1, 2) == '60' ~ 'American Samoa',
+      as.numeric(substr(tract_geoid_true, 1, 2)) > 60 ~ 'Guam & Northern Marianas',
+      TRUE ~ 'Continental US'
+    )
+  )
+state_boundaries <- st_transform(tigris::states(cb = TRUE, year = 2020, progress_bar = FALSE), st_crs(hifld))
+p <- map(unique(hifld$pane), function(p){
+  hifld <- hifld %>% filter(pane == p)
+  ggplot() + 
+    geom_sf(data = state_boundaries) + 
+    geom_sf(data = hifld, aes(color = loc_class), size = .5) +
+    scale_color_discrete(name = 'Location Class') + 
+    scale_x_continuous(lim = c(st_bbox(hifld)['xmin'], st_bbox(hifld)['xmax'])) +
+    scale_y_continuous(lim = c(st_bbox(hifld)['ymin'], st_bbox(hifld)['ymax'])) +
+    theme_void() +
+    ggtitle(p) 
+})
+
+walk(p, print)
+```
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+#| 
+
+state_boundaries %>% 
+  st_join(hifld) %>%
+  st_drop_geometry() %>%
+  group_by(NAME, loc_class) %>%
+  summarize(n = sum(!is.na(id)), .groups = 'drop') %>%
+  pivot_wider(names_from = loc_class, values_from = n, values_fill = 0) %>%
+  transmute(
+    `State/Territory` = NAME,
+    `nonurban nontribal`,
+    `urban nontribal`,
+    tribal,
+    territory,
+    `Total` = `nonurban nontribal` + `urban nontribal` + tribal + territory
+  ) %>%
+  kbl(
+    digits=0, 
+    format.args = list(big.mark = ',')
+  ) %>% 
+  kable_material()
+```
+
+Across all regions, the total number of points in each classification were as follows:
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+#| 
+hifld %>%
+  st_drop_geometry() %>% 
+  group_by(`Location Class` = loc_class) %>%
+  summarize(`Total` = n(), .groups = 'drop') %>%
+  kbl(
+    digits=0, 
+    format.args = list(big.mark = ',')
+  ) %>% 
+  kable_material()
+```
+
+### Geocoding Performance Evaluation
+
+
+#### Match Rate
+
+Degauss and UW PostGIS returned a single result for more than 98% of reference locations. Nominatim performed notably less well, returning a single result for a minority of reference locations, and returning no result at all for almost a quarter of them. 
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+#| 
+gc_summary <- compare %>%
+  group_by(geocoder, id) %>%
+  summarize(
+    address_gc_count = sum(!is.na(lat_gc)),
+    all_fail = all(isTRUE(failure))
+  ) %>%
+  ungroup() %>% 
+  group_by(geocoder) %>%
+  summarize(
+    `Single` =  glue('{sum(address_gc_count == 1)} ({round(100*sum(address_gc_count == 1)/n(), 2)}%)'),
+    `Multiple` =  glue('{sum(address_gc_count > 1)} ({round(100*sum(address_gc_count > 1)/n(), 2)}%)'),
+    `None` = glue('{sum(all_fail)} ({round(100*sum(all_fail)/n(), 2)}%)') 
+  ) %>%
+  arrange(geocoder) 
+gc_summary %>%
+  kbl(
+    digits=0, 
+    format.args = list(big.mark = ',')
+  ) %>% 
+  kable_material() %>% 
+  add_header_above(
+    c(" ",
+      "Matches" = 3
+    ),
+    align = "c"
+    )
+```
+
+#### Match Type and Match Score
+
+##### Deguass
+
+Degauss provides both a match type and match score. The match type field returned is called "precision" and has one of the following values (from the Degauss geocoder documenation [@degauss_cite]):
+
+ * "range": interpolated based on address ranges from street segments
+ * "street": center of the matched street
+ * "intersection": intersection of two streets
+ * "zip": centroid of the matched zip code
+ * "city": centroid of the matched city 
+
+The match score field is called "score" and, per the Deguass geocoding documentation, is "the percentage of text match between the given address and the geocoded result, expressed as a number between 0 and 1. A higher score indicates a closer match. [@deguass_cite]" Scores can only be compared within precisions. 
+
+When the geocoder returned multiple geocodes for an address, the geocodes for that address had the same "precision" in all cases. 
+
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+#| 
+compare %>% 
+  st_drop_geometry() %>% 
+  filter(geocoder == 'degauss') %>%
+  select(id, degauss_precision, degauss_score) %>%
+  distinct() %>%
+  mutate(degauss_precision = if_else(is.na(degauss_precision), "Missing", degauss_precision)) %>% 
+  group_by(`Precision` = degauss_precision) %>%
+  summarize(
+    `Count` = n(),
+    `Percentage` = glue('{round(100*n()/nrow(.), 2)} %'),
+    `Min.` = min(degauss_score),
+    `Mean` = mean(degauss_score), 
+    `Median` = median(degauss_score), 
+    `Max.` = max(degauss_score), 
+  ) %>%
+  kbl(
+    digits=2,
+    format.args = list(big.mark = ',')
+  ) %>% 
+  kable_material() %>% 
+  add_header_above(
+    c(" " = 3,
+      "Score" = 4
+    ),
+    align = "c"
+    )
+```
+
+Degauss found one or more "range" matches (the most accurate) or "street" matches (the second most accurate) for 99% of reference locations. 
+
+##### UW PostGIS
+
+PostGIS provides a match score called "rating" with zero being the most confident and 100 being the most confident. However, occasionally the geocoder did return a value greater than 100 (it did so `r sum(compare$postgis_rating > 100, na.rm = TRUE)` times in this exercise). Most reference locations were assigned a "rating" of exactly zero. 
+
+We present the summary statistics and a density plot of the "rating" field for UW PostGIS results below:
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+#| 
+compare %>%
+  st_drop_geometry() %>% 
+  filter(geocoder == 'postgis') %>%
+  summarize(
+    `Min.` = min(postgis_rating, na.rm = TRUE),
+    `25th Percentile` = quantile(postgis_rating, .25, na.rm = TRUE), 
+    `Mean` = mean(postgis_rating, na.rm = TRUE), 
+    `Median` = median(postgis_rating, na.rm = TRUE), 
+    `75th Percentile` = quantile(postgis_rating, .75, na.rm = TRUE),
+    `Max.` = max(postgis_rating, na.rm = TRUE),
+    `Missing` = glue('{sum(is.na(postgis_rating))} ({round(100*mean(is.na(postgis_rating)), 2)}%)')
+  ) %>%
+  kbl(
+    digits=2
+  ) %>% 
+  kable_material() 
+```
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+
+compare %>%
+  st_drop_geometry() %>% 
+  filter(geocoder == 'postgis') %>% 
+  ggplot() + 
+    geom_density(aes(postgis_rating)) + 
+    xlab('Rating') + ylab('Density') + ggtitle('Density of UW PostGIS Rating for Reference Location Geocodes') + 
+    theme_minimal()
+```
+
+
+##### Nominatim
+
+Nominatim does not return a score or match type useful in reporting geocoding confidence. 
+
+
+#### Spatial Accuracy
+
+We calculated the distance in meters between each geocode and the geographic location provided in the reference data set. In cases where a geocoder returned more than one geocode for a given location, we first calculated the mean of the distances for all of a given reference location's geocoddes, without regard to direction, before calculating the summary statistics presented (e.g. a location for which a geocoder returned two geocodes, one 100 meters North of the true location and one 50 meters East of the true location, we respresented it as having an average error of 75 meters for the purpose of calculating this summary). 
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+#| 
+gc_summary <- compare %>%
+  group_by(geocoder, id) %>%
+  summarize(
+    gc_diff_m = mean(gc_diff_m),
+    multiples = if_else(n() > 1, 'Multiple', 'Single'),
+    all_fail = all(isTRUE(failure))
+  ) %>%
+  ungroup() %>% 
+  group_by(geocoder, multiples) %>%
+  summarize(
+    `Min` = min(gc_diff_m, na.rm=TRUE), 
+    `25th Percentile` = quantile(gc_diff_m, .25, na.rm = TRUE), 
+    `Mean` = mean(gc_diff_m, na.rm=TRUE), 
+    `Median` = median(gc_diff_m, na.rm=TRUE), 
+    `75th Percentile` = quantile(gc_diff_m, .75, na.rm = TRUE), 
+    `Max` = max(gc_diff_m, na.rm=TRUE), 
+  ) %>%
+  arrange(geocoder, desc(multiples))
+gc_summary %>%
+  kbl(
+    digits=0, 
+    format.args = list(big.mark = ',')
+  ) %>% 
+  kable_material() %>% 
+  add_header_above(
+    c(" " = 2,
+      "Geocoding Error (meters)" = 6
+    ),
+    align = "c"
+    )
+  
+```
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+#| 
+ggplot(compare) + 
+  geom_boxplot(aes(x = geocoder, y = gc_diff_m)) +
+  ylim(0, 1000) + 
+  ylab('Distance from Gold Standard (m) - Truncated') +   
+  xlab('Geocoder') +
+  ggtitle("Error by Geocoder", subtitle = "Error Truncated to 1000m") + 
+  theme_minimal()
+```
+
+
+#### Administrative Unit Concordance
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+#| 
+# work in progress
+gc_summary <- compare %>%
+  group_by(geocoder, id) %>%
+  summarize(
+    multiples = if_else(n() == 1, 'Single', 'Multiple'),
+    gc_tract_correct = mean(gc_tract_correct, na.rm = TRUE)
+  ) %>% 
+  group_by(geocoder, multiples) %>%
+  summarize(
+    `Any Correct` = sum(gc_tract_correct > 0, na.rm = TRUE), 
+    `All Correct` = sum(gc_tract_correct == 1, na.rm = TRUE), 
+    `Percent Any` = glue('{round(100*mean(gc_tract_correct > 1, na.rm = TRUE), 2)}%'),
+    `Percent All` = glue('{round(100*mean(gc_tract_correct==1, na.rm = TRUE), 2)}%')
+  ) %>%
+  pivot_wider(names_from = multiples, values_from = c(`Any Correct`, `All Correct`, `Percent Any`, `Percent All`)) %>%
+  arrange(geocoder) %>%
+  select(
+    geocoder,
+    `Count Correct` = `All Correct_Single`,
+    `Percent Correct` = `Percent All_Single`,
+    `Count All Correct` = `All Correct_Multiple`,
+    `Percent All Correct` = `Percent All_Multiple`,
+    `Count Any Correct` = `Any Correct_Multiple`,
+    `Percent Any Correct` = `Percent Any_Multiple`
+  )
+
+gc_summary %>%
+  kbl(
+    digits=0, 
+    format.args = list(big.mark = ',')
+  ) %>% 
+  kable_material() %>% 
+  add_header_above(
+    c(" ",
+      "Single Geocode" = 2,
+      "Multiple Geocodes" = 4
+    ),
+    align = "c"
+    )
+```
+
+
+#### Summary
+
+_To Do: Exclude multiples(?) and aggregate all results into a beautiful table that includes breakout by location class._
+
+### Combining Geocoder Results
+
+## Discussion
+
+_To Do: What does it all mean???_
+
+## Citations
+
+_To Do: Cite Nominatim, UW PostGIS?_
+
+<!-- citations auto generated here --> 
+

@@ -1,0 +1,436 @@
+---
+title: "Misclassification Simulation (OOS)"
+format:
+  html:
+    toc: true
+    df-print: kable
+execute-dir: project
+execute:
+  echo: false
+  warning: false
+---
+
+## Simulation Exercise 
+
+In order to inform our strategy for using multiple geocoders, we simulate
+the process of assigning each address to its Census tract (as will occur when
+assigning SES). 
+
+### Evaluation Metrics
+
+* Percent of locations mapped to _correct_ Census Tract (ID'ed)
+* Percent of locations mapped to _incorrect_ Census Tract (Misclassified)
+* Percent of locations not assigned to Census Tract (Missing)
+* Geocodes per 100 locations
+
+### Strategies
+
+* A: Best Available Geocode
+
+    - All geocoders
+    - Without Nominatim
+    
+* B: Centroid of All Acceptable Geocodes
+
+    - Using multiple results
+    - Using singletons only
+
+* C: Individual Geocoders
+
+    - PostGIS
+    - Degauss
+    
+
+```{r}
+#| include: false
+
+library(tidyverse)
+library(tigris)
+library(sf)
+library(kableExtra)
+
+# Pull Previously generated comparison data set
+gcs <- read_csv('data/full/geocode_comparison_clean.csv')
+gcs <- st_as_sf(gcs, coords = c('long_gc', 'lat_gc'), crs = 'WGS84', na.fail = FALSE)
+gcs$geometry_true <- st_as_sf(as.data.frame(gcs), coords = c("long_input","lat_input"), crs = 'WGS84', na.fail = FALSE)$geometry
+
+# Download 2020 Census Tracts (exclude FIPS 74 call bc Midway has no tracts)
+tr <- map(setdiff(unique(fips_codes$state_code), '74'), tracts, year = 2020, cb = FALSE, progress_bar = FALSE) %>% 
+  bind_rows() %>% 
+  select(GEOID) %>%
+  st_transform('WGS84')
+
+# Find Tracts for GC and True locations
+gcs <- st_set_geometry(gcs, 'geometry_true')
+gcs <- st_join(gcs, tr) %>% rename(tract_geoid_true = GEOID)
+gcs <- st_set_geometry(gcs, 'geometry') 
+gcs <- st_join(gcs, tr) %>% rename(tract_geoid_gc = GEOID)
+```
+
+## Strategy A: Use the Single Best Available GC
+
+Accept the first acceptable geocode in this order:
+
+1. PostGIS with confidence = 0 
+2. Degauss with precision "range" (N = 1)
+3. PostGIS with confidence <= 10
+4. Nominatim (N = 1)
+5. Degauss with precision "street" (N = 1)
+
+_Note: This order was determined by ranking each category's mean geocoding error in the reference data set. PostGIS with rating > 10 
+performed so badly I did not feel comfortable including it even as a backup strategy._
+
+
+```{r}
+#| echo: false
+#| 
+gcs <- gcs %>% 
+  group_by(geocoder, id) %>%
+  mutate(
+    rank = case_when(
+      n() == 1 & geocoder == 'postgis' & rating_postgis == 0 ~ '1 - Postgis Rating = 0',
+      n() == 1 & geocoder == 'degauss' & precision_degauss == 'range' ~ '2 - Degauss Precision = "range"',
+      n() == 1 & geocoder == 'postgis' & rating_postgis <= 10 ~ '3 - Postgis Rating <= 10', 
+      n() == 1 & geocoder == 'nominatim' ~ '4 - Nominatim',
+      n() == 1 & geocoder == 'degauss' & precision_degauss == 'street' ~ '5 - Degauss Precision = "range"',
+      #n() == 1 & geocoder == 'postgis' & rating_postgis > 10 ~ 6L,
+      TRUE ~ '999 - None'
+    )
+  ) %>% 
+  ungroup()
+
+strategy_a <- gcs %>% 
+  filter(!is.na(rank)) %>% 
+  filter(!is.na(tract_geoid_gc)) %>% 
+  group_by(id) %>%
+  filter(as.numeric(substr(rank, 1, 1)) == min(as.numeric(substr(rank, 1, 1)))) %>%
+  filter(!rank == '999 - None') %>% 
+  #mutate(tract_geoid_true = if_else(rank == '999 - None', NA_character_, tract_geoid_true)) %>%
+  st_drop_geometry()
+
+strategy_a %>% 
+  st_drop_geometry() %>% 
+  group_by(rank) %>% 
+  summarize(
+    `N` = n(),
+    `% ID'ed` = 100*sum(tract_geoid_true == tract_geoid_gc, na.rm=TRUE)/n(),
+    `% Misclassified` = 100*sum(tract_geoid_true != tract_geoid_gc, na.rm=TRUE)/n(),
+) %>%
+  kbl(
+    digits=0, 
+  ) |> 
+  kable_material() %>% 
+  add_header_above(
+    c(" ",
+      " ",
+      "Tracts" = 2
+    ),
+    align = "c"
+    ) 
+
+```
+
+### Total
+
+```{r}
+#| echo: false
+
+summary_a <- distinct(select(gcs, id)) %>% 
+  left_join(strategy_a, by = 'id') %>% 
+  ungroup() %>%
+  st_drop_geometry() %>% 
+  summarize(
+    #`Geocodes per 100 Loc.s` = 100*sum(pmin(as.numeric(substr(rank, 1, 1)), 2)/length(unique(gcs$id)), na.rm = TRUE),
+    `% ID'ed` = 100*sum(tract_geoid_true == tract_geoid_gc, na.rm=TRUE)/n(),
+    `% Misclassified` = 100*sum(tract_geoid_true != tract_geoid_gc, na.rm=TRUE)/n(),
+    `% Missing` = 100*mean(is.na(tract_geoid_gc))
+  )
+summary_a %>%
+  kbl(
+    digits=0, 
+  ) |> 
+  kable_material() %>% 
+  add_header_above(
+    c(
+      "Tracts" = 3
+    ),
+    align = "c"
+    ) 
+
+```
+
+## Strategy A2: Use the Single Best Available GC (No Nominatim)
+
+Since strategy A barely uses Nominatim (as the overall worst performer), we can simplify implementation and reduce the number of geocoding operations needed by excluding it.
+
+1. PostGIS with confidence = 0 
+2. Degauss with precision "range" (N = 1)
+3. PostGIS with confidence <= 10
+4. <del>Nominatim (N = 1)</del>
+5. Degauss with precision "street" (N = 1)
+
+
+```{r}
+#| echo: false
+
+strategy_a2 <- gcs %>% 
+  group_by(geocoder, id) %>%
+  mutate(
+    rank = case_when(
+      n() == 1 & geocoder == 'postgis' & rating_postgis == 0 ~ '1 - Postgis Rating = 0',
+      n() == 1 & geocoder == 'degauss' & precision_degauss == 'range' ~ '2 - Degauss Precision = "range"',
+      n() == 1 & geocoder == 'postgis' & rating_postgis <= 10 ~ '3 - Postgis Rating <= 10', 
+      #n() == 1 & geocoder == 'nominatim' ~ '4 - Nominatim',
+      n() == 1 & geocoder == 'degauss' & precision_degauss == 'street' ~ '5 - Degauss Precision = "range"',
+      #n() == 1 & geocoder == 'postgis' & rating_postgis > 10 ~ 6L,
+      TRUE ~ '999 - None'
+    )
+  ) %>% 
+  ungroup() %>% 
+  filter(!is.na(rank)) %>% 
+  filter(!is.na(tract_geoid_gc)) %>% 
+  group_by(id) %>%
+  filter(as.numeric(substr(rank, 1, 1)) == min(as.numeric(substr(rank, 1, 1))))  %>%
+  mutate(tract_geoid_true = if_else(rank == '999 - None', '9999999999999999', tract_geoid_true))
+
+strategy_a2 %>% 
+  st_drop_geometry() %>% 
+  group_by(rank) %>% 
+  summarize(
+    `N` = n(),
+    `% ID'ed` = 100*sum(tract_geoid_true == tract_geoid_gc, na.rm=TRUE)/n(),
+    `% Misclassified` = 100*sum(tract_geoid_true != tract_geoid_gc, na.rm=TRUE)/n(), 
+  ) %>%
+  kbl(
+    digits=0, 
+  ) |> 
+  kable_material() %>% 
+  add_header_above(
+    c(" ",
+      " ",
+      "Tracts" = 2
+    ),
+    align = "c"
+    )
+```
+
+### Total
+
+```{r}
+#| echo: false
+
+summary_a2 <- strategy_a2 %>% 
+  ungroup() %>%
+  st_drop_geometry() %>% 
+  summarize(
+    `Geocodes per 100 Loc.s` = 100*sum(pmin(as.numeric(substr(rank, 1, 1)), 2)/length(unique(gcs$id)), na.rm = TRUE),
+    `% ID'ed` = 100*sum(tract_geoid_true == tract_geoid_gc, na.rm=TRUE)/length(unique(gcs$id)),
+    `% Misclassified` = 100*sum(tract_geoid_true != tract_geoid_gc, na.rm=TRUE)/length(unique(gcs$id)),
+    `% Missing` = 100 - 100*n()/length(unique(gcs$id))
+  )
+summary_a2 %>%
+  kbl(
+    digits=0, 
+  ) |> 
+  kable_material() %>% 
+  add_header_above(
+    c(" ",
+      "Tracts" = 3
+    ),
+    align = "c"
+    ) 
+
+```
+
+## Strategy B: Use All Acceptable GCs
+
+Take the centroid of all "acceptable" geocodes. We see a major drop-off in performance after 
+item 4 above, so "acceptable" will be defined as any of:
+
+1. PostGIS with confidence = 0 
+2. Degauss with precision "range" (Incl. Multiples) 
+3. PostGIS with confidence <= 10 
+4. Nominatim (Incl. Multiples) 
+
+```{r}
+#| echo: false
+
+gcs_centroid <- gcs %>% 
+  mutate(
+    rank = case_when( # no longer use N=1 
+      geocoder == 'postgis' & rating_postgis == 0 ~ 1L,
+      geocoder == 'degauss' & precision_degauss == 'range' ~ 2L,
+      geocoder == 'postgis' & rating_postgis <= 10 ~ 3L,
+      geocoder == 'nominatim' ~ 4L,
+      geocoder == 'degauss' & precision_degauss == 'street' ~ 5L,
+      geocoder == 'postgis' & rating_postgis > 10 ~ 6L,
+      TRUE ~ Inf
+    )
+  ) %>% 
+  filter(!st_is_empty(geometry)) %>% 
+  filter(as.numeric(substr(rank, 1, 1)) <= 4) %>% 
+  select(-tract_geoid_gc) %>% 
+  st_set_geometry('geometry') %>% 
+  group_by(id, tract_geoid_true) %>%
+  summarize(
+    spread = max(as.numeric(st_distance(geometry))),
+    n_pts = n(),
+    ranks = list(rank),
+    geometry = st_centroid(st_combine(geometry)),
+    .groups = 'drop'
+  ) %>% 
+  st_join(tr) %>%
+  rename(tract_geoid_gc = GEOID) 
+
+
+summary_centroid <- gcs_centroid %>% 
+  st_drop_geometry() %>% 
+  summarize(
+    `Geocodes per 100 Loc.s` = 300,
+    `% ID'ed` = 100*sum(tract_geoid_true == tract_geoid_gc, na.rm=TRUE)/length(unique(gcs$id)),
+    `% Misclassified` = 100*sum(tract_geoid_true != tract_geoid_gc, na.rm=TRUE)/length(unique(gcs$id)),
+    `% Missing` = 100 - 100*n()/length(unique(gcs$id))
+  )
+summary_centroid %>% 
+  kbl(
+    digits=0, 
+  ) |> 
+  kable_material()
+```
+
+
+## Strategy B2: Use All Acceptable GCs (Singletons only)
+
+Try again, but, as with strategy A, exclude any results where multiple geocodes are returned. 
+
+1. PostGIS with confidence = 0 
+2. Degauss with precision "range" (N=1)
+3. PostGIS with confidence <= 10 
+4. Nominatim (N=1) 
+
+```{r}
+#| echo: false
+
+gcs_centroid_singletons <- gcs %>% 
+  filter(!st_is_empty(geometry)) %>% 
+  filter(as.numeric(substr(rank, 1, 1)) <= 4) %>% 
+  select(-tract_geoid_gc) %>% 
+  st_set_geometry('geometry') %>% 
+  group_by(id, tract_geoid_true) %>%
+  summarize(
+    spread = max(as.numeric(st_distance(geometry))),
+    n_pts = n(),
+    ranks = list(rank),
+    geometry = st_centroid(st_combine(geometry)),
+    .groups = 'drop'
+  ) %>% 
+  st_join(tr) %>%
+  rename(tract_geoid_gc = GEOID) 
+
+
+summary_centroid_singletons <- gcs_centroid_singletons %>% 
+  st_drop_geometry() %>% 
+  summarize(
+    `Geocodes per 100 Loc.s` = 300,
+    `% ID'ed` = 100*sum(tract_geoid_true == tract_geoid_gc, na.rm=TRUE)/length(unique(gcs$id)),
+    `% Misclassified` = 100*sum(tract_geoid_true != tract_geoid_gc, na.rm=TRUE)/length(unique(gcs$id)),
+    `% Missing` = 100 - 100*n()/length(unique(gcs$id))
+  )
+summary_centroid_singletons %>% 
+  kbl(
+    digits=0, 
+  ) |> 
+  kable_material()
+```
+
+## Strategy C1: Use PostGIS Only
+
+_Note: PostGIS almost always returns a result._
+
+```{r}
+#| echo: false
+
+summary_postgis <- gcs %>% 
+  st_drop_geometry() %>% 
+  filter(geocoder == 'postgis') %>% 
+  summarize(
+    `Geocodes per 100 Loc.s` = 100,
+    `% ID'ed` = 100*sum(tract_geoid_true == tract_geoid_gc, na.rm=TRUE)/length(unique(gcs$id)),
+    `% Misclassified` = 100*sum(tract_geoid_true != tract_geoid_gc, na.rm=TRUE)/length(unique(gcs$id)),        `% Missing` = 100 - 100*n()/length(unique(gcs$id))
+  )
+summary_postgis %>%
+  kbl(
+    digits=0, 
+  ) |> 
+  kable_material()
+
+```
+
+
+## Strategy C2: Use Degauss Only
+
+### Multiples 
+
+_Note: Where multiple results are returned, the precision and score always match._
+
+* If the distance between any of the geocodes is more than 100m, do not use.
+* Otherwise, take centroid of the geocodes.
+
+```{r}
+#| echo: false
+
+gcs_degauss <- gcs %>% 
+  filter(!st_is_empty(geometry)) %>% 
+  filter(geocoder == 'degauss') %>% 
+  select(-tract_geoid_gc) %>% 
+  st_set_geometry('geometry') %>% 
+  group_by(id, tract_geoid_true) %>%
+  summarize(
+    spread = max(as.numeric(st_distance(geometry))),
+    geometry = st_centroid(st_combine(geometry)),
+    .groups = 'drop'
+  ) %>% 
+  filter(spread < 100) %>% 
+  st_join(tr) %>%
+  rename(tract_geoid_gc = GEOID) 
+
+summary_degauss <- gcs_degauss %>% 
+  st_drop_geometry() %>% 
+  summarize(
+    `Geocodes per 100 Loc.s` = 100,
+    `% ID'ed` = 100*sum(tract_geoid_true == tract_geoid_gc, na.rm=TRUE)/length(unique(gcs$id)),
+    `% Misclassified` = 100*sum(tract_geoid_true != tract_geoid_gc, na.rm=TRUE)/length(unique(gcs$id)),
+    `% Missing` = 100 - 100*n()/length(unique(gcs$id))
+  )
+
+summary_degauss %>% kbl(
+    digits=0, 
+  ) |> 
+  kable_material()
+```
+
+## Summary
+
+```{r}
+#| echo: false
+#| 
+bind_rows(
+  `Best Available` = summary_a, 
+  `Best Available (No Nominatim)` = summary_a2,
+  `All Acceptable` = summary_centroid, 
+  `All Acceptable Singletons` = summary_centroid_singletons, 
+  `PostGIS Only` = summary_postgis,
+  `Degauss Only` = summary_degauss,
+  .id = 'Strategy'
+) %>% kbl(
+    digits=0, 
+  ) |> 
+  kable_material()
+```
+
+
+```{r}
+#| include: false
+
+save(file = '../data/full/sim.rdata') 
+```

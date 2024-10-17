@@ -1,0 +1,513 @@
+---
+title: "Notional Data Exploration"
+format: 
+  html:
+    toc: true
+    df-print: kable
+execute-dir: project
+execute:
+  echo: false
+  warning: false
+---
+
+```{r}
+#| include: false
+
+library(sf)
+library(tidyverse)
+library(mapview)
+library(kableExtra)
+library(glue)
+library(readxl)
+
+theme_set(theme_minimal())
+setwd(here::here())
+
+input <- read_rds('data/reference_locs.rds') %>%
+  rename(id = Location_id) %>% 
+  mutate(id = as.character(id)) %>% 
+  filter(!is.na(latitude))
+
+# do a quick check to make sure the "true" lat longs are at least in the right state
+qc <- function(input){
+  input_sf <- st_as_sf(input, coords = c('longitude', 'latitude'), crs = 4326, na.fail = FALSE)
+  input_sf <- st_join(input_sf, select(tigris::states(), state_spatial = STUSPS) %>% st_transform(4326), left = TRUE)
+  input$qc_fail <- (input_sf$state_abbr != input_sf$state_spatial) | is.na(input_sf$state_spatial)
+  input
+}
+input <- qc(input)
+
+loc_class <- read_rds('data/loc_class.rds') %>% 
+  rename(id = Location_id) %>% 
+  mutate(id = as.character(id)) %>%
+  transmute(
+    id, 
+    loc_class = 
+      case_when(
+        state_territory == 'territory' ~ 'territory',
+        tribal == 'tribal' ~ 'tribal',
+        ruca_urban == 'urban' ~   'urban nontribal',
+        ruca_urban == 'nonurban' ~ 'nonurban nontribal',
+        TRUE ~ NA
+      )
+  )
+
+
+input <- input %>% left_join(loc_class, by = 'id')
+
+raw_output <- list(
+  postgis = read_rds('data/postgis_gc.rds'),
+  degauss = read_rds('data/degauss_gc.rds'),
+  nominatim = read_rds('data/nominatim_gc.rds')
+)
+
+output <- list(
+  postgis = raw_output$postgis %>% 
+    transmute(
+      id = Location_id, 
+      rating_postgis = as.numeric(rating),
+      lat_gc = as.numeric(lat),
+      long_gc = as.numeric(long)
+    ) %>%
+    group_by(id) %>%
+    mutate(result_postgis = row_number()) %>%
+    ungroup(),
+  degauss = raw_output$degauss %>% 
+    transmute(
+      id = Location_id, 
+      score_degauss = as.numeric(score),
+      precision_degauss = precision,
+      lat_gc = as.numeric(lat),
+      long_gc = as.numeric(lon)
+    ) %>%
+    group_by(id) %>%
+    mutate(result_degauss = row_number())  %>%
+    ungroup()%>%
+    filter(precision_degauss != 'zip'),
+  nominatim = raw_output$nominatim %>% 
+    transmute(
+      id = Location_id, 
+      lat_gc = as.numeric(lat),
+      long_gc = as.numeric(lon),
+    ) %>%
+    group_by(id) %>%
+    mutate(result_nominatim = row_number()) %>%
+    ungroup()
+) %>%
+  map(st_as_sf, coords = c('long_gc', 'lat_gc'), crs = 4326, remove = FALSE, na.fail = FALSE)
+
+output_long <- output %>% 
+  bind_rows(.id = "geocoder") 
+compare <- input %>%
+  filter(!qc_fail) %>% 
+  transmute(
+    id,
+    location_source_value,
+    lat_input = latitude, 
+    long_input = longitude, 
+    loc_class
+  ) %>% 
+  expand_grid(geocoder = c('postgis', 'degauss', 'nominatim')) %>% 
+  left_join(output_long, by = c('id', 'geocoder')) %>% 
+  mutate(failure = is.na(lat_gc) | is.na(long_gc)) %>% 
+  arrange(id, geocoder)
+
+compare$geometry_true <- st_as_sf(as.data.frame(compare), coords = c("long_input","lat_input"), crs = 4326, na.fail = FALSE)$geometry
+
+compare <- compare %>% mutate(
+    gc_diff_m = as.numeric(st_distance(geometry, geometry_true, by_element = TRUE)),
+    location_source_value = toupper(location_source_value)
+  )
+
+write_rds(compare, 'data/geocode_comparison_clean.rds')
+```
+
+## Data Description
+
+### Input
+
+The input data set of `r nrow(input)` addresses contains a variety of public places with verified locations from the Homeland Infrastructure Foundation-Level Data data set. I pulled a cleaned version from Brian Chang's Github project (`github.com/brian-cy-chang/CLAD_Geospatial`). After a minimal QC to check if the input data set's lat/long were in the same state specified in the address, I removed `r sum(input$qc_fail)` addresses, leaving `r sum(!input$qc_fail)`. 
+
+As we are interested in how our geocoders perform in native areas, non-urban areas, and territories, I classified each location as follows:
+
+* `tribal`: US Census American Indian, Alaska Native, Native Hawaiian Areas Shapefile ([description](https://www2.census.gov/geo/pdfs/reference/GARM/Ch5GARM.pdf)) - binary `native`, `nonnative` 
+* `ruca`: USDA Economic Research Service Rural-Urban Commuting Area Codes ([RUCA](https://www.ers.usda.gov/data-products/rural-urban-commuting-area-codes/)) - `1`-`10` or `99` (see docs). 
+* `state_territory`: USPS state/territory abbreviation from source data set - binary with `state and DC` or `territory`
+
+For this analysis, I created a simplified categorization for each location based on those variables. 
+
+`loc_class` is :
+
+* `"territory"` if the point falls in a territory (there are no designated tribal areas in territories and not all territories received RUCA designations)
+* `"tribal"` if it falls in a AIAN/Native Hawaiian Area regardless of urbanicity
+* `"urban nontribal"` if the RUCA is 1, 2, or 3 and it falls in a state or DC outside of a tribal area
+* `"nonurban nontribal"` if the RUCA is not 1, 2, or 3 and it falls in a state or DC outside of a tribal area
+
+```{r}
+input %>%
+  filter(!qc_fail) %>%
+  group_by(loc_class) %>%
+  summarize(`N Locations` = n()) 
+```
+_Note: Urban Tribal (N = 66) and Rural Tribal (N = 511) were combined. "Urban" and "Rural" both represent non-tribal locations only._
+
+##### Sample Input
+
+```{r}
+#| echo: false
+
+head(st_drop_geometry(input))
+```
+
+### Output
+
+Input data was geocoded with three different geocoders. Unlike in V1 of this exercise, we included
+a county column for Nominatim (which is required in its spec). 
+
+#### PostGIS
+
+##### Notes
+
+-   Based on US Census TIGER database
+
+-   Contains a "rating" column indicating match confidence.
+
+-   Documentation [here](https://postgis.net/docs/manual-3.4/postgis_installation.html#loading_extras_tiger_geocoder)
+
+##### Sample Output
+
+```{r}
+#| echo: false
+
+head(raw_output$postgis)
+```
+
+#### Degauss
+
+##### Notes
+
+-   Contains a "score" rating the confidence in the match, and a "precision" stating which kind of match was found ("street", "range", or "zip"). All "zip" matches were censored.
+
+-   Documentation [here](https://degauss.org/geocoder/)
+
+##### Sample Output
+
+```{r}
+#| echo: false
+
+head(raw_output$degauss)
+```
+
+#### Nominatim
+
+##### Notes
+
+-   We are currently unable to implement Nominatim in Foundry. 
+
+-   Based on OpenStreetMap database
+
+-   Documentation [here](https://nominatim.org/release-docs/latest/)
+
+##### Sample Output
+
+```{r}
+#| echo: false
+
+head(raw_output$nominatim)
+```
+
+## Performance by Geocoder
+
+Degauss and PostGIS performed notably better than Nominatim on both accuracy and success rate. Nominatim failed to return a around a quarter much of the time, and when it did, it often returned several matches (also around a quarter of the time). 
+
+_Note: For input addresses that a geocoder assigned multiple matches, the mean error of the matches was used._
+
+```{r}
+#| echo: false
+
+gc_summary <- compare %>%
+  group_by(geocoder, id) %>%
+  summarize(
+    gc_diff_m = mean(gc_diff_m),
+    address_gc_count = n(),
+    all_fail = all(isTRUE(failure))
+  ) %>%
+  ungroup() %>% 
+  group_by(geocoder) %>%
+  #filter(address_gc_count == 1) %>% 
+  summarize(
+    `Min` = min(gc_diff_m, na.rm=TRUE), 
+    `Mean` = mean(gc_diff_m, na.rm=TRUE), 
+    `Median` = median(gc_diff_m, na.rm=TRUE), 
+    `Max` = max(gc_diff_m, na.rm=TRUE), 
+    `Single` =  glue('{sum(address_gc_count == 1)} ({round(100*sum(address_gc_count == 1)/n())}%)'),
+    `Multiple` =  glue('{sum(address_gc_count > 1)} ({round(100*sum(address_gc_count > 1)/n())}%)'),
+    `None` = glue('{sum(all_fail)} ({round(100*sum(all_fail)/n())}%)') 
+  ) %>%
+  arrange(geocoder) 
+gc_summary %>%
+  kbl(
+    digits=0, 
+  ) |> 
+  kable_material() %>% 
+  add_header_above(
+    c(" ",
+      "Distance from Gold Standard (m)" = 4,
+      "Matches" = 3
+    ),
+    align = "c"
+    )
+  
+```
+
+```{r}
+#| echo: false
+#| warning: false
+#| 
+ggplot(compare) + 
+  geom_boxplot(aes(x = geocoder, y = gc_diff_m)) +
+  ylim(0, 1000) + 
+  ylab('Distance from Gold Standard (m) - Truncated') +   
+  xlab('Geocoder') +
+  ggtitle("Error by Geocoder", subtitle = "Error Truncated to 1000m")
+```
+
+We can now examine the performance by the location class. Only Degauss successfully geocoded locations in territories. All geocoders performed somewhat worse in tribal an nontribal nonurban locations. 
+
+```{r}
+#| echo: false
+
+gc_summary <- compare %>%
+  group_by(geocoder, id, loc_class) %>%
+  summarize(
+    gc_diff_m = mean(gc_diff_m),
+    address_gc_count = n(),
+    all_fail = all(isTRUE(failure))
+  ) %>%
+  ungroup() %>% 
+  group_by(geocoder, loc_class) %>%
+  summarize(
+    `Min` = min(gc_diff_m, na.rm=TRUE), 
+    `Mean` = mean(gc_diff_m, na.rm=TRUE), 
+    `Median` = median(gc_diff_m, na.rm=TRUE), 
+    `Max` = max(gc_diff_m, na.rm=TRUE), 
+    `Single` =  glue('{sum(address_gc_count == 1)} ({round(100*sum(address_gc_count == 1)/n())}%)'),
+    `Multiple` =  glue('{sum(address_gc_count > 1)} ({round(100*sum(address_gc_count > 1)/n())}%)'),
+    `None` = glue('{sum(all_fail)} ({round(100*sum(all_fail)/n())}%)') 
+  ) %>%
+  arrange(geocoder) 
+gc_summary %>%
+  kbl(
+    digits=0, 
+  ) |> 
+  kable_material() %>% 
+  add_header_above(
+    c(" " = 2,
+      "Distance from Gold Standard (m)" = 4,
+      "Matches" = 3
+    ),
+    align = "c"
+    )
+  
+```
+```{r}
+#| echo: false
+#| warning: false
+#| 
+ggplot(compare) + 
+  geom_boxplot(aes(x = interaction(geocoder, loc_class), y = gc_diff_m, fill = loc_class)) +
+  ylim(0, 1000) + 
+  ylab('Distance from Gold Standard (m) - Truncated') +   
+  xlab('Geocoder') +
+  ggtitle("Error by Geocoder", subtitle = "Error Truncated to 1000m") + 
+  theme(
+    axis.text.x = element_text(angle = -90)
+  )
+```
+
+## Geocode Confidence Ratings
+
+Two of the geocoders, PostGIS, and Degauss, provide some diagnostic information about their confidence in the geocode. We would like to know if those are actually predictive of the geocode's accuracy. 
+
+### PostGIS
+
+PostGIS provides a numerical rating from 0 to 100, with zero being the most confident. However, occasionally the geocoder did return a value greater than 100. 
+
+Because the distribution of geocoding errors has a long tail, we'll look at the relationship between the rating and the error on both the natural and logarithmic scale. The natural scale is truncated to an error of 1000m in order to see the differences happening at that scale.
+
+```{r}
+#| echo: false
+#| warning: false
+
+ggplot(filter(compare, geocoder == 'postgis')) + 
+  geom_point(aes(x = rating_postgis, y = gc_diff_m), alpha = .01) +
+  geom_smooth(aes(x = rating_postgis, y = gc_diff_m)) +
+  ylim(0, 1000) + 
+  ylab('Distance from Gold Standard (m) - Truncated') +   
+  xlab('Geocode Rating') +
+  ggtitle("Error vs. Geocode Rating", subtitle = "Error Truncated to 1000 m")
+```
+
+```{r}
+#| echo: false
+#| warning: false
+
+ggplot(filter(compare, geocoder == 'postgis')) + 
+  geom_point(aes(x = rating_postgis, y = gc_diff_m), alpha = .01) +
+  geom_smooth(aes(x = rating_postgis, y = gc_diff_m)) +
+  scale_y_continuous(trans = 'log10') +
+  ylab('Distance from Gold Standard (m)') +   
+  xlab('Geocode Rating') + 
+    ggtitle("Error vs. Geocode Rating - Log Scale")
+```
+
+It appears there is a relationship between the rating and accurace for the lowest ratings, but for ratings above ~20 there does not appear to be a convincing relatinship. 
+
+### Degauss
+
+Degauss provides a "precision" value ("street", "range", or "zip" in the notional data) and a "score" value. Scores are only comparable within precision groups per the Degauss docs. They define the score as:
+
+> The percentage of text match between the given address and the geocoded result, expressed as a number between 0 and 1. A higher score indicates a closer match.
+
+Again, we'll look at the relationship between the rating and the error on both the natural and logarithmic scale, this time broken out by the geocode precision.
+
+```{r}
+#| echo: false
+#| warning: false
+
+ggplot(filter(compare, geocoder == 'degauss' & precision_degauss %in% c('range', 'street'))) + 
+  geom_point(aes(x = score_degauss, y = gc_diff_m), alpha = .01) +
+  geom_smooth(method='lm', aes(x = score_degauss, y = gc_diff_m)) + 
+  ylim(0, 1000) + 
+  facet_wrap(~precision_degauss) +   
+  ylab('Distance from Gold Standard (m) - Truncated') +   
+  xlab('Geocode Score') + 
+  ggtitle("Error vs. Geocode Score", subtitle = "Truncated to 1000 m")
+```
+
+```{r}
+#| echo: false
+#| warning: false
+
+ggplot(filter(compare, geocoder == 'degauss' & precision_degauss %in% c('range', 'street'))) + 
+  geom_point(aes(x = score_degauss, y = gc_diff_m), alpha = .01) +
+  geom_smooth(method='lm', aes(x = score_degauss, y = gc_diff_m)) + 
+  scale_y_continuous(trans = 'log10') + 
+  facet_wrap(~precision_degauss) + 
+  ylab('Distance from Gold Standard (m)') +   
+  xlab('Geocode Score') + 
+  ggtitle("Error vs. Geocode Score - Log Scale")
+```
+
+"Street" precision does have more error than "range" precision, as would be expected. There does appear to be a relationship on the log scale between geocode score and geocode error within the "street" precision type but not a very strong one (r^2 = `r round(cor(filter(compare, geocoder == 'degauss' & precision_degauss %in% c('range', 'street'))$score_degauss, log(filter(compare, geocoder == 'degauss' & precision_degauss %in% c('range', 'street'))$gc_diff_m))^2, 2)` on the log scale). 
+
+
+### Nominatim
+
+Nominatim results did not include any sort of confidence score to evaluate. However, we can look at the roughly 50% of the time where it returned a single result and compare it to the 25% of the time where it returned multiple results. 
+
+```{r}
+filter(compare, geocoder == 'nominatim') %>% 
+    filter(!is.na(gc_diff_m)) %>%
+    group_by(id) %>% 
+    mutate(results = if_else(n() > 1, 'Multiple', 'Single')) %>%
+  group_by(results) %>%
+  summarize(
+    `Min` = min(gc_diff_m, na.rm=TRUE), 
+    `Mean` = mean(gc_diff_m, na.rm=TRUE), 
+    `Median` = median(gc_diff_m, na.rm=TRUE), 
+    `Max` = max(gc_diff_m, na.rm=TRUE)
+  ) %>%
+  kbl(
+    digits=0, 
+  ) |> 
+  kable_material() %>% 
+  add_header_above(
+    c(" " = 1,
+      "Distance from Gold Standard (m)" = 4
+    ),
+    align = "c"
+    )
+```
+
+
+```{r}
+#| warning: false
+#| 
+ggplot(
+  filter(compare, geocoder == 'nominatim') %>% 
+    filter(!is.na(gc_diff_m)) %>%
+    group_by(id) %>% 
+    mutate(results = if_else(n() > 1, 'Multiple', 'Single'))
+) + 
+  geom_boxplot(aes(x = results, y = gc_diff_m)) +   
+  scale_y_continuous(trans = 'log10') 
+
+```
+
+Singleton results are certainly significantly better than multiples. However, as we cannot currently implement Nomintatim, this is moot. 
+
+### Comparing Scores Among Geocoders
+
+_NOTE: also do this for loc_type_
+
+Let's see if we can rank geocoder confidence ratings among all the geocoders. In this case, we will break PostGIS confidence into three bins: confidence = 0, 0 < confidence <= 20, and confidence > 10. We will use Degauss's "precision" variable to divide those results (still not accepting a "zip" result). For all geocoders, we will singleton results (this mostly applies to Nominatim, however Degauss does return multiples around 2% of the time). 
+
+```{r}
+#| echo: false
+#| warning: false
+
+compare_w_unified_confidence <- compare %>% 
+  mutate(
+    unified_confidence = paste0(geocoder, ' ', coalesce(precision_degauss, case_when(rating_postgis == 0 ~ ' - Rating = 0', rating_postgis <= 20 ~ ' - Rating ∈ (0,20]', rating_postgis > 20 ~ ' - Rating > 20'), ''))
+  ) %>% 
+  filter(!is.na(gc_diff_m)) 
+
+gc_summary <- compare_w_unified_confidence %>%
+  group_by(unified_confidence, id) %>%
+  filter(n() == 1) %>% 
+  summarize(
+    gc_diff_m = mean(gc_diff_m),
+    address_gc_count = n(),
+    all_fail = all(isTRUE(failure))
+  ) %>%
+  ungroup() %>% 
+  group_by(unified_confidence) %>%
+  summarize(
+    `N` = n(),
+    `Min` = min(gc_diff_m, na.rm=TRUE), 
+    `Mean` = mean(gc_diff_m, na.rm=TRUE), 
+    `Median` = median(gc_diff_m, na.rm=TRUE), 
+    `Max` = max(gc_diff_m, na.rm=TRUE), 
+    `Multiple` =  glue('{sum(address_gc_count > 1)} ({round(100*sum(address_gc_count > 1)/n())}%)'),
+    `None` = glue('{sum(all_fail)} ({round(100*sum(all_fail)/n())}%)') 
+  ) %>%
+  arrange(Median) 
+gc_summary %>%
+  kbl(
+    digits=0, 
+  ) |> 
+  kable_material() %>% 
+  add_header_above(
+    c(" ",
+      "N" = 1,
+      "Distance from Gold Standard (m)" = 4,
+      "Matches" = 2
+    ),
+    align = "c"
+    )
+
+```
+
+```{r}
+#| echo: false
+#| warning: false
+ggplot(compare_w_unified_confidence %>% group_by(unified_confidence, id) %>% filter(n() == 1)) + 
+  geom_boxplot(aes(x = unified_confidence, y = gc_diff_m)) +
+  ylim(0, 1000) + 
+  ylab('Distance from Gold Standard (m) - Truncated') +   
+  xlab('Geocoder and Confidence Rating') +
+  ggtitle("Error by Geocoder", subtitle = "Error Truncated to 1000m") + 
+  theme(axis.text.x = element_text(angle = 90))
+```
+
