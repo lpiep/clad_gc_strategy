@@ -1,4 +1,4 @@
-FROM rocker/geospatial:latest
+FROM rocker/geospatial:4.1.0
 
 COPY ./ /app
 WORKDIR /app
