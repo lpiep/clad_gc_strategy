@@ -21,6 +21,7 @@ jobs:
           context: .
           file: Dockerfile
           push: false
+          
       - name: Commit HTML output
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
