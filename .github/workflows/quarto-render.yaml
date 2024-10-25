@@ -25,7 +25,7 @@ jobs:
       - name: Setup Renv
         uses: r-lib/actions/setup-renv@v2
       - name: Render Report
-        run: quarto geocoder_evaluation.qmd
+        run: Rscript -e "quarto::quarto_render()"
       - uses: stefanzweifel/git-auto-commit-action@v4
         with:
           commit_message: render report
