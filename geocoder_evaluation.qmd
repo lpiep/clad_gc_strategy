@@ -20,6 +20,8 @@ library(sf)
 library(tigris)
 library(kableExtra)
 library(glue)
+library(arrow)
+library(sfarrow) 
 
 options(knitr.kable.NA = '—')
 
