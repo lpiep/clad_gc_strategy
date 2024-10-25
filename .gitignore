@@ -1,5 +1,6 @@
 geocoder_evaluation_files/
 renv/
+.Rprofile
 
 # History files
 .Rhistory
