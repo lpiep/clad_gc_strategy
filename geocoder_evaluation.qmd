@@ -3,6 +3,9 @@ title: "Geocoder Evaluation"
 format:
   html:
     toc: true
+knitr:
+  opts_chunk: 
+    dev: png
 execute-dir: project
 bibliography: citations.bib
 ---
@@ -17,6 +20,8 @@ library(sf)
 library(tigris)
 library(kableExtra)
 library(glue)
+
+options(knitr.kable.NA = '—')
 
 compare <- read_rds('data/geocode_comparison_clean.rds')
 input <- read_rds('data/reference_locs.rds')
@@ -34,7 +39,7 @@ We implemented three geocoders which met CLAD's specific requirements, namely:
 2. Can operate without an internet connection
 2. Cover the United States
 
-We considered multiple geocoders (see [Geocoding Requirements D.08.01 Appendix 1](https://docs.google.com/document/d/1F-woq9EY1Oa712KZBapUbf5sFoPGbhDqvIzHIJuC7cI/edit?tab=t.0#heading=h.dv0iytdnmoo4)) and selected Nominatim, Degauss, and PostGIS as potentially feasible to implement and meeting the project requirements. 
+We considered multiple geocoders (see [Geocoding Requirements D.08.01 Appendix 1](https://docs.google.com/document/d/1F-woq9EY1Oa712KZBapUbf5sFoPGbhDqvIzHIJuC7cI/edit?tab=t.0#heading=h.dv0iytdnmoo4)) and selected Nominatim, DeGAUSS, and PostGIS as potentially feasible to implement and meeting the project requirements. 
 
 ## Methods
 
@@ -73,13 +78,13 @@ We combined these categories to create a single location classification variable
 
 ### Geocoding
 
-#### Degauss
+#### DeGAUSS
 
 DeGAUSS [@degauss_cite] (Decentralized Geomarker Assessment for Multi-Site Studies) is a geocoder specifically engineered for epidemiological studies such as All of Us. It is deployed as a [docker container](https://degauss.org/geocoder/) and provides functionality to geocode US addresses against the US Census's TIGER database.  
 
 #### UW PostGIS 
 
-_To Do: How does UW postgis work?_
+The UW PostGIS geocoder is set up as an API on top of a PostgreSQL database with the PostGIS extension's [geocoding functionality](https://postgis.net/docs/Geocode.html) enabled. Like DeGAUSS, it uses the US Census's TIGER database as its spatial reference data. 
 
 #### Nominatim
 
@@ -131,7 +136,8 @@ hifld <- compare %>%
       substr(tract_geoid_true, 1, 2) == '60' ~ 'American Samoa',
       as.numeric(substr(tract_geoid_true, 1, 2)) > 60 ~ 'Guam & Northern Marianas',
       TRUE ~ 'Continental US'
-    )
+    ),
+    loc_class = as.factor(loc_class)
   )
 state_boundaries <- st_transform(tigris::states(cb = TRUE, year = 2020, progress_bar = FALSE), st_crs(hifld))
 p <- map(unique(hifld$pane), function(p){
@@ -139,7 +145,7 @@ p <- map(unique(hifld$pane), function(p){
   ggplot() + 
     geom_sf(data = state_boundaries) + 
     geom_sf(data = hifld, aes(color = loc_class), size = .5) +
-    scale_color_discrete(name = 'Location Class') + 
+    scale_color_discrete(name = 'Location Class', drop = FALSE) + 
     scale_x_continuous(lim = c(st_bbox(hifld)['xmin'], st_bbox(hifld)['xmax'])) +
     scale_y_continuous(lim = c(st_bbox(hifld)['ymin'], st_bbox(hifld)['ymax'])) +
     theme_void() +
@@ -199,7 +205,7 @@ hifld %>%
 
 #### Match Rate
 
-Degauss and UW PostGIS returned a single result for more than 98% of reference locations. Nominatim performed notably less well, returning a single result for a minority of reference locations, and returning no result at all for almost a quarter of them. 
+DeGAUSS and UW PostGIS returned a single result for more than 98% of reference locations. Nominatim performed notably less well, returning a single result for a minority of reference locations, and returning no result at all for almost a quarter of them. 
 
 ```{r}
 #| echo: false
@@ -236,9 +242,9 @@ gc_summary %>%
 
 #### Match Type and Match Score
 
-##### Deguass
+##### Degauss
 
-Degauss provides both a match type and match score. The match type field returned is called "precision" and has one of the following values (from the Degauss geocoder documenation [@degauss_cite]):
+DeGAUSS provides both a match type and match score. The match type field returned is called "precision" and has one of the following values (from the DeGAUSS geocoder documtenation [@degauss_cite]):
 
  * "range": interpolated based on address ranges from street segments
  * "street": center of the matched street
@@ -246,7 +252,7 @@ Degauss provides both a match type and match score. The match type field returne
  * "zip": centroid of the matched zip code
  * "city": centroid of the matched city 
 
-The match score field is called "score" and, per the Deguass geocoding documentation, is "the percentage of text match between the given address and the geocoded result, expressed as a number between 0 and 1. A higher score indicates a closer match. [@deguass_cite]" Scores can only be compared within precisions. 
+The match score field is called "score" and, per the DeGAUSS geocoding documentation, is "the percentage of text match between the given address and the geocoded result, expressed as a number between 0 and 1. A higher score indicates a closer match. [@degauss_cite]" Scores can only be compared within precisions. 
 
 When the geocoder returned multiple geocodes for an address, the geocodes for that address had the same "precision" in all cases. 
 
@@ -284,11 +290,11 @@ compare %>%
     )
 ```
 
-Degauss found one or more "range" matches (the most accurate) or "street" matches (the second most accurate) for 99% of reference locations. 
+DeGAUSS found one or more "range" matches (the most accurate) or "street" matches (the second most accurate) for 99% of reference locations. 
 
 ##### UW PostGIS
 
-PostGIS provides a match score called "rating" with zero being the most confident and 100 being the most confident. However, occasionally the geocoder did return a value greater than 100 (it did so `r sum(compare$postgis_rating > 100, na.rm = TRUE)` times in this exercise). Most reference locations were assigned a "rating" of exactly zero. 
+PostGIS provides a match score called "rating" with zero being the most confident and 100 being the least confident. However, occasionally the geocoder did return a value greater than 100 (it did so `r sum(compare$postgis_rating > 100, na.rm = TRUE)` times in this exercise). Most reference locations were assigned a "rating" of exactly zero. 
 
 We present the summary statistics and a density plot of the "rating" field for UW PostGIS results below:
 
@@ -345,6 +351,7 @@ We calculated the distance in meters between each geocode and the geographic loc
 #| message: false
 #| 
 gc_summary <- compare %>%
+  st_drop_geometry() %>%
   group_by(geocoder, id) %>%
   summarize(
     gc_diff_m = mean(gc_diff_m),
@@ -378,28 +385,42 @@ gc_summary %>%
 ```
 
 ```{r}
+#| include: false
 #| echo: false
 #| warning: false
 #| message: false
-#| 
-ggplot(compare) + 
-  geom_boxplot(aes(x = geocoder, y = gc_diff_m)) +
-  ylim(0, 1000) + 
-  ylab('Distance from Gold Standard (m) - Truncated') +   
-  xlab('Geocoder') +
-  ggtitle("Error by Geocoder", subtitle = "Error Truncated to 1000m") + 
-  theme_minimal()
+
+### !!! doesn't seem to calculate IQR correctly when cut off at 1000 !!! ###
+compare %>%
+  st_drop_geometry() %>% 
+  group_by(geocoder, id) %>%
+  summarize(
+    gc_diff_m = mean(gc_diff_m),
+    multiples = if_else(n() > 1, 'Multiple', 'Single'),
+    all_fail = all(isTRUE(failure))
+  ) %>%
+  ungroup() %>% 
+  ggplot() + 
+    geom_boxplot(aes(x = geocoder, y = gc_diff_m, fill = multiples)) +
+    scale_y_continuous(limits = c(0, 1000)) + 
+    #ylim(0, 1000) + 
+    ylab('Distance from Gold Standard (m) - Truncated') +   
+    xlab('Geocoder') +
+    scale_fill_discrete(name = '') + 
+    ggtitle("Error by Geocoder", subtitle = "Error Truncated to 1000m") + 
+    theme_minimal()
 ```
 
 
 #### Administrative Unit Concordance
+
+We show below the counts and percentages of geocodes that correctly identified the 2020 census tract for the reference locations. We separately summarized locations that received multiple geocodes, showing counts and percentages of locations for which all the geocodes returned were correct ("All Correct") and for which any of the geocodes returned was correct ("Any Correct"). Recall that UW PostGIS only ever returned a single geocode per location. 
 
 ```{r}
 #| echo: false
 #| warning: false
 #| message: false
 #| 
-# work in progress
 gc_summary <- compare %>%
   group_by(geocoder, id) %>%
   summarize(
@@ -410,8 +431,8 @@ gc_summary <- compare %>%
   summarize(
     `Any Correct` = sum(gc_tract_correct > 0, na.rm = TRUE), 
     `All Correct` = sum(gc_tract_correct == 1, na.rm = TRUE), 
-    `Percent Any` = glue('{round(100*mean(gc_tract_correct > 1, na.rm = TRUE), 2)}%'),
-    `Percent All` = glue('{round(100*mean(gc_tract_correct==1, na.rm = TRUE), 2)}%')
+    `Percent Any` = glue('{round(100*mean(gc_tract_correct > 0, na.rm = TRUE), 2)}%'),
+    `Percent All` = glue('{round(100*mean(gc_tract_correct == 1, na.rm = TRUE), 2)}%')
   ) %>%
   pivot_wider(names_from = multiples, values_from = c(`Any Correct`, `All Correct`, `Percent Any`, `Percent All`)) %>%
   arrange(geocoder) %>%
@@ -441,11 +462,114 @@ gc_summary %>%
 ```
 
 
-#### Summary
+#### Summarized Results by Location Class
 
-_To Do: Exclude multiples(?) and aggregate all results into a beautiful table that includes breakout by location class._
+We see in both the spatial accuracy and administrative concordance metrics that when DeGAUSS or Nominatim returned multiple geocodes, they were less reliable. In addition, the presence of multiple geocode estimates for each location complicates calculating and comparing quality metrics, especially as we expand our analysis to include various classes of locations (i.e. urban, non-urban, native, and territory). Given both the quality and interpretability issues, we believe it is reasonable to exclude any non-singleton geocodes returned as we continue to present results. 
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+#| 
+
+compare %>% 
+  group_by(geocoder, id) %>%
+  filter(n() == 1 & !input_qc_fail) %>% # singletons only
+  ungroup() %>%
+  group_by(geocoder, loc_class) %>%
+  summarize(
+    N = n(),
+    # Match Rate
+    `Match Rate (%)` = 100*sum(!is.na(lat_gc))/n(),
+    # Match Score/Type
+    `Match Type Acceptable* (%)` = 100*sum(if_else(geocoder != 'degauss', NA, 1) * degauss_precision %in% c('range', 'street')/n()),
+    `Mean Match Score**` = coalesce(mean(postgis_rating, na.rm = TRUE)),
+    `Median Spatial Accuracy (m)` = median(gc_diff_m, na.rm = TRUE),
+    `Administrative Unit Concordance (% Agreement at Tract)` = 100*mean(gc_tract_correct, na.rm = TRUE)
+  )  %>%
+  arrange(loc_class, geocoder) %>% 
+  kbl(
+    digits=2, 
+    format.args = list(big.mark = ',')
+  ) %>% 
+  kable_material() 
+```
+
+\* Acceptable match types are "street" or "range" in the DeGAUSS geocoder. <br />
+** UW PostGIS scores are only meaningful within match type, so they are not reported here. 
 
 ### Combining Geocoder Results
+
+
+#### Strategy A: Use the Single Best Available GC
+
+Accept the first acceptable geocode in this order:
+
+1. PostGIS with confidence = 0 
+2. Degauss with precision "range"
+3. PostGIS with confidence <= 20
+4. Nominatim (N = 1)
+5. Degauss with precision "street"
+6. PostGIS with confidence > 20
+
+```{r}
+#| echo: false
+
+compare_w_ranks <- read_rds('data/compare_w_ranks.rds')
+
+compare_w_ranks %>% 
+  st_drop_geometry() %>% 
+  group_by(rank) %>% 
+  summarize(
+    `N` = n(),
+    `Median Spatial Accuracy (m)` = median(gc_diff_m, na.rm = TRUE),
+    `Administrative Unit Concordance (% Agreement at Tract)` = 100*sum(gc_tract_correct, na.rm=TRUE)/n()
+) %>%
+  kbl(
+    digits=0, 
+    format.args = list(big.mark = ',')
+  ) %>%
+  kable_material() %>% 
+  add_header_above(
+    c(" ",
+      " ",
+      "Performance" = 2
+    ),
+    align = "c"
+    ) 
+```
+
+```{r}
+#| echo: false
+#| 
+compare_w_ranks %>% 
+  st_drop_geometry() %>% 
+  ungroup() %>% 
+  summarize(
+    `N` = n(),
+    `Administrative Unit Concordance (% Agreement at Tract)` = 100*sum(gc_tract_correct, na.rm=TRUE)/n(),
+    `Median Spatial Accuracy (m)` = median(gc_diff_m, na.rm = TRUE),
+) %>%
+  kbl(
+    digits=0, 
+    format.args = list(big.mark = ',')
+  ) %>%
+  kable_material() %>% 
+  add_header_above(
+    c(
+      " " = 1,
+      "Performance" = 2
+    ),
+    align = "c"
+    ) %>% 
+  add_header_above(
+    c(
+      "Total" = 3
+    ),
+    align = "c"
+    )
+```
+
 
 ## Discussion
 

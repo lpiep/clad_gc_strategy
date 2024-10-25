@@ -73,11 +73,12 @@ Accept the first acceptable geocode in this order:
 
 1. PostGIS with confidence = 0 
 2. Degauss with precision "range" (N = 1)
-3. PostGIS with confidence <= 10
+3. PostGIS with confidence <= 20
 4. Nominatim (N = 1)
 5. Degauss with precision "street" (N = 1)
+6. PostGIS with confidence > 20
 
-_Note: This order was determined by ranking each category's mean geocoding error in the reference data set. PostGIS with rating > 10 
+_Note: This order was determined by ranking each category's mean geocoding error in the reference data set. PostGIS with rating > 20
 performed so badly I did not feel comfortable including it even as a backup strategy._
 
 
@@ -90,10 +91,9 @@ gcs <- gcs %>%
     rank = case_when(
       n() == 1 & geocoder == 'postgis' & rating_postgis == 0 ~ '1 - Postgis Rating = 0',
       n() == 1 & geocoder == 'degauss' & precision_degauss == 'range' ~ '2 - Degauss Precision = "range"',
-      n() == 1 & geocoder == 'postgis' & rating_postgis <= 10 ~ '3 - Postgis Rating <= 10', 
+      n() == 1 & geocoder == 'postgis' & rating_postgis <= 20 ~ '3 - Postgis Rating <= 20', 
       n() == 1 & geocoder == 'nominatim' ~ '4 - Nominatim',
       n() == 1 & geocoder == 'degauss' & precision_degauss == 'street' ~ '5 - Degauss Precision = "range"',
-      #n() == 1 & geocoder == 'postgis' & rating_postgis > 10 ~ 6L,
       TRUE ~ '999 - None'
     )
   ) %>% 
