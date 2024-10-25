@@ -23,8 +23,8 @@ library(glue)
 
 options(knitr.kable.NA = '—')
 
-compare <- read_rds('data/geocode_comparison_clean.rds')
-input <- read_rds('data/reference_locs.rds')
+compare <- read_parquet('data/geocode_comparison_clean.parquet')
+input <- read_parquet('data/reference_locs.parquet')
 n_excluded <- compare %>% select(id, input_qc_fail) %>% distinct() %>% pull(input_qc_fail) %>% sum()
 n_included <- compare %>% select(id, input_qc_fail) %>% distinct() %>% pull(input_qc_fail) %>% `!`() %>% sum()
 ```
@@ -515,7 +515,7 @@ Accept the first acceptable geocode in this order:
 ```{r}
 #| echo: false
 
-compare_w_ranks <- read_rds('data/compare_w_ranks.rds')
+compare_w_ranks <- read_parquet('data/compare_w_ranks.parquet')
 
 compare_w_ranks %>% 
   st_drop_geometry() %>% 

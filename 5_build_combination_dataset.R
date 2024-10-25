@@ -10,7 +10,7 @@ library(sf)
 # 5. Degauss with precision "street" (N = 1)
 # 999. PostGIS with confidence > 20 OR NA 
 
-compare <- read_rds('data/geocode_comparison_clean.rds')
+compare <- st_read_parquet('data/geocode_comparison_clean.parquet') %>% as_tibble() # preserve geometry data without treating as sf
 compare_w_ranks <- compare %>% 
   group_by(geocoder, id) %>%
   filter(n() == 1 & !input_qc_fail) %>% # singletons only
@@ -29,7 +29,8 @@ compare_w_ranks <- compare %>%
   group_by(id) %>%
   filter(as.numeric(substr(rank, 1, 1)) == min(as.numeric(substr(rank, 1, 1)))) %>%
   mutate(gc_tract_correct = if_else(rank == '999 - None', NA, gc_tract_correct)) 
-write_rds(st_drop_geometry(compare_w_ranks), 'data/compare_w_ranks.rds')
+
+st_write_parquet(st_as_sf(compare_w_ranks), 'data/compare_w_ranks.parquet')
 
 
 tr <- map(setdiff(unique(fips_codes$state_code), '74'), tracts, year = 2020, cb = FALSE, progress_bar = FALSE) %>% 
@@ -54,4 +55,4 @@ compare_centroid <- compare_w_ranks %>%
   mutate(gc_tract_correct = tract_geoid_true == tract_geoid)
 
 
-write_rds(compare_centroid, 'data/compare_w_centroid.rds')
+st_write_parquet(compare_centroid, 'data/compare_w_centroid.parquet')

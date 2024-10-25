@@ -16,3 +16,15 @@ data/loc_class.rds filter=lfs diff=lfs merge=lfs -text
 data/ruca.xlsx filter=lfs diff=lfs merge=lfs -text
 data/Tribal_Priority_2_5_combined.dbf filter=lfs diff=lfs merge=lfs -text
 data/Tribal_Priority_2_5_combined.shx filter=lfs diff=lfs merge=lfs -text
+data/degauss_gc.parquet filter=lfs diff=lfs merge=lfs -text
+data/nominatim_gc.parquet filter=lfs diff=lfs merge=lfs -text
+data/reference_locs.parquet filter=lfs diff=lfs merge=lfs -text
+data/geocode_comparison_clean.parquet filter=lfs diff=lfs merge=lfs -text
+data/nominatim_census.parquet filter=lfs diff=lfs merge=lfs -text
+data/reference_census.parquet filter=lfs diff=lfs merge=lfs -text
+data/loc_class.parquet filter=lfs diff=lfs merge=lfs -text
+data/postgis_gc.parquet filter=lfs diff=lfs merge=lfs -text
+data/compare_w_centroid.parquet filter=lfs diff=lfs merge=lfs -text
+data/compare_w_ranks.parquet filter=lfs diff=lfs merge=lfs -text
+data/degauss_census.parquet filter=lfs diff=lfs merge=lfs -text
+data/postgis_census.parquet filter=lfs diff=lfs merge=lfs -text

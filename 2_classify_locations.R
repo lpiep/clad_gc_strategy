@@ -9,8 +9,9 @@ library(tigris)
 library(readxl)
 library(sf)
 library(tidyverse)
+library(arrow)
 
-reference_locs <- read_rds('data/reference_locs.rds')
+reference_locs <- read_parquet('data/reference_locs.parquet')
 
 native_areas <- read_sf('data/Tribal_Priority_2_5_combined.shp') %>%
   summarize(
@@ -55,4 +56,4 @@ loc_class <- reference_locs %>%
   st_drop_geometry() %>% 
   mutate(tribal = if_else(is.na(tribal), 'nontribal', 'tribal'))
 
-write_rds(loc_class, 'data/loc_class.rds')
+write_parquet(loc_class, 'data/loc_class.parquet')

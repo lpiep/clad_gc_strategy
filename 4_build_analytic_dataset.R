@@ -9,7 +9,7 @@ library(tidyverse)
 library(sf)
 
 ### Reference Data Set ###
-input <- read_rds('data/reference_locs.rds') %>%
+input <- read_parquet('data/reference_locs.parquet') %>%
   rename(id = Location_id) %>% 
   mutate(id = as.character(id)) %>% 
   filter(!is.na(latitude))
@@ -24,7 +24,7 @@ qc <- function(input){
 input <- qc(input)
 
 # add location classes to input data
-loc_class <- read_rds('data/loc_class.rds') %>% 
+loc_class <- read_parquet('data/loc_class.parquet') %>% 
   rename(id = Location_id) %>% 
   mutate(id = as.character(id)) %>%
   transmute(
@@ -42,15 +42,15 @@ loc_class <- read_rds('data/loc_class.rds') %>%
 input <- input %>% left_join(loc_class, by = 'id')
 
 # add census geography to input data
-reference_census <- read_rds('data/reference_census.rds') %>% rename(id = Location_id) %>% mutate(id = as.character(id))
+reference_census <- read_parquet('data/reference_census.parquet') %>% rename(id = Location_id) %>% mutate(id = as.character(id))
 input <- input %>% left_join(reference_census, by = 'id')
 
 
 ### Geocoded Data Sets ###
 output_long <- list(
-  degauss = read_rds('data/degauss_gc.rds') %>% st_as_sf(coords = c('lon', 'lat'), crs = 'WGS84', na.fail = FALSE),
-  postgis = read_rds('data/postgis_gc.rds') %>% st_as_sf(coords = c('long', 'lat'), crs = 'WGS84', na.fail = FALSE),
-  nominatim = read_rds('data/nominatim_gc.rds') %>% st_as_sf(coords = c('lon', 'lat'), crs = 'WGS84', na.fail = FALSE)
+  degauss = read_parquet('data/degauss_gc.parquet') %>% st_as_sf(coords = c('lon', 'lat'), crs = 'WGS84', na.fail = FALSE),
+  postgis = read_parquet('data/postgis_gc.parquet') %>% st_as_sf(coords = c('long', 'lat'), crs = 'WGS84', na.fail = FALSE),
+  nominatim = read_parquet('data/nominatim_gc.parquet') %>% st_as_sf(coords = c('lon', 'lat'), crs = 'WGS84', na.fail = FALSE)
 ) %>%
   bind_rows(.id = "geocoder") %>%
   select(id = Location_id, result_id, geocoder, degauss_precision = precision, degauss_score = score, postgis_rating = rating) %>%
@@ -58,9 +58,9 @@ output_long <- list(
 
 # add in geocode census geography 
 census_geog <- bind_rows(
-  read_rds('data/degauss_census.rds'),
-  read_rds('data/postgis_census.rds'),
-  read_rds('data/nominatim_census.rds')
+  read_parquet('data/degauss_census.parquet'),
+  read_parquet('data/postgis_census.parquet'),
+  read_parquet('data/nominatim_census.parquet')
 ) %>%
   rename(id = Location_id)
 
@@ -95,4 +95,4 @@ compare <- compare %>% mutate(
   mutate(result_count = n()) %>%
   ungroup()
 
-write_rds(compare, 'data/geocode_comparison_clean.rds')
+st_write_parquet(st_as_sf(compare), 'data/geocode_comparison_clean.parquet')

@@ -11,12 +11,14 @@ library(jsonlite)
 library(future)
 library(furrr)
 library(glue)
+library(arrow)
+library(sfarrow)
 
 plan(multisession(workers = 10))
 
 reference_locs <- read_csv("https://github.com/brian-cy-chang/CLAD_Geospatial/raw/refs/heads/main/output/OMOP_location_flagged_successful.csv")
 #reference_locs <- reference_locs %>% sample_n(100)
-write_rds(reference_locs, 'data/reference_locs.rds')
+write_parquet(reference_locs, 'data/reference_locs.parquet')
 
 # tribal boundaries
 # https://www.fcc.gov/25-ghz-rural-tribal-maps (eligible FCC 2.5GHz areas)
@@ -80,8 +82,9 @@ nominatim_gc <- future_pmap(
   bind_rows(.id = 'Location_id') %>% 
   group_by(Location_id) %>% 
   mutate(result_id = row_number()) %>%
-  ungroup()
-saveRDS(nominatim_gc, 'data/nominatim_gc.rds')
+  ungroup() %>%
+  st_drop_geometry()
+write_parquet(nominatim_gc, 'data/nominatim_gc.parquet')
 
 stop('donezo!') 
 
@@ -93,8 +96,9 @@ degauss_gc <- future_map(
   bind_rows(.id = 'Location_id') %>%
   group_by(Location_id) %>% 
   mutate(result_id = row_number()) %>%
-  ungroup()
-saveRDS(degauss_gc, 'data/degauss_gc.rds')
+  ungroup() %>%
+  st_drop_geometry()
+write_parquet(degauss_gc, 'data/degauss_gc.parquet')
 
 
 postgis_gc <- future_map(
@@ -105,9 +109,10 @@ postgis_gc <- future_map(
   bind_rows(.id = 'Location_id') %>%
   group_by(Location_id) %>% 
   mutate(result_id = row_number()) %>%
-  ungroup()
+  ungroup() %>%
+  st_drop_geometry()
 
-saveRDS(postgis_gc, 'data/postgis_gc.rds')
+write_parquet(postgis_gc, 'data/postgis_gc.parquet')
 
 
 degauss_missed <-   mutate(reference_locs, Location_id = as.character(Location_id)) %>% anti_join(degauss_gc, by = 'Location_id')
