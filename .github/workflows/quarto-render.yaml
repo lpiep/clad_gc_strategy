@@ -20,6 +20,10 @@ jobs:
           context: .
           file: Dockerfile
           push: false
+          imageid: my-image
+      - name: Run Docker container
+        run: |
+          docker run my-image
       - uses: stefanzweifel/git-auto-commit-action@v4
         with:
           commit_message: render report
