@@ -15,7 +15,7 @@ jobs:
       - name: Check out code
         uses: actions/checkout@v4
       - name: Build docker images
-        run: docker build -f Dockerfile --label local
+        run: docker build -t local .
       - name: Run image
         run: docker run local
       - uses: stefanzweifel/git-auto-commit-action@v4
