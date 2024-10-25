@@ -19,7 +19,7 @@ jobs:
       - name: Build docker images
         run: docker build -t local .
       - name: Run image
-        run: docker run local
+        run: docker run local "quarto geocoder_evaluation.qmd"
       - uses: stefanzweifel/git-auto-commit-action@v4
         with:
           commit_message: render report
