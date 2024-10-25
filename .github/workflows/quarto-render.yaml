@@ -20,7 +20,6 @@ jobs:
           context: .
           file: Dockerfile
           push: false
-      - name: Commit HTML output
       - uses: actions/checkout@v4
       - run: |
           git config --global user.name "GitHub Action"
