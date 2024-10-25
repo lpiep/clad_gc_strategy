@@ -13,24 +13,23 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check out code
-        uses: actions/checkout@v2
-
+          uses: actions/checkout@v2
+      
       - name: Build and render Quarto in Docker
-        uses: docker/build-push-action@v2
-        with:
-          context: .
-          file: Dockerfile
-          push: false  # Change to true if you want to push the image
-          tags: quarto-render
-          
-        - name: Commit HTML output
+          uses: docker/build-push-action@v2
+          with:
+            context: .
+            file: Dockerfile
+            push: false  # Change to true if you want to push the image
+            tags: quarto-render
+      - name: Commit HTML output
           env:
             GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           run: 
             # Set up Git
             git config --global user.name "GitHub Action"
             git config --global user.email "action@github.com"
-  
+
             # Check if the output file exists and commit if it does
             git add *.html
             git commit -m "Update rendered HTML output" || echo "No changes to commit"
