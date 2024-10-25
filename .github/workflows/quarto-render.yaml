@@ -15,15 +15,10 @@ jobs:
       - name: Check out code
         uses: actions/checkout@v4
       - name: Build and push
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: Dockerfile
-          push: false
-          imageid: my-image
-      - name: Run Docker container
-        run: |
-          docker run my-image
+      - name: Build docker images
+        run: docker build -t local < Dockerfile
+      - name: Run image
+        run: docker run local
       - uses: stefanzweifel/git-auto-commit-action@v4
         with:
           commit_message: render report
