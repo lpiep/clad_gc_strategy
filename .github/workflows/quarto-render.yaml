@@ -21,8 +21,8 @@ jobs:
           file: Dockerfile
           push: false
       - name: Commit HTML output
-        uses: actions/checkout@v4
-        run: |
+      - uses: actions/checkout@v4
+      - run: |
           git config --global user.name "GitHub Action"
           git config --global user.email "action@github.com"
           git add .
