@@ -1,0 +1,1343 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
+  <meta charset="utf-8">
+  <meta name="generator" content="quarto-0.9.16">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+  <title>Geocoder Evaluation</title>
+  <style>
+    code{white-space: pre-wrap;}
+    span.smallcaps{font-variant: small-caps;}
+    span.underline{text-decoration: underline;}
+    div.column{display: inline-block; vertical-align: top; width: 50%;}
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    ul.task-list{list-style: none;}
+    div.csl-bib-body { }
+    div.csl-entry {
+      clear: both;
+    }
+    .hanging div.csl-entry {
+      margin-left:2em;
+      text-indent:-2em;
+    }
+    div.csl-left-margin {
+      min-width:2em;
+      float:left;
+    }
+    div.csl-right-inline {
+      margin-left:2em;
+      padding-left:1em;
+    }
+    div.csl-indent {
+      margin-left: 2em;
+    }
+  </style>
+
+  <script src="geocoder_evaluation_files/libs/clipboard/clipboard.min.js"></script>
+  <script src="geocoder_evaluation_files/libs/quarto-html/quarto.js"></script>
+  <script src="geocoder_evaluation_files/libs/quarto-html/popper.min.js"></script>
+  <script src="geocoder_evaluation_files/libs/quarto-html/tippy.umd.min.js"></script>
+  <script src="geocoder_evaluation_files/libs/quarto-html/anchor.min.js"></script>
+  <link href="geocoder_evaluation_files/libs/quarto-html/tippy.css" rel="stylesheet">
+  <link href="geocoder_evaluation_files/libs/quarto-html/quarto-syntax-highlighting.css" rel="stylesheet">
+  <script src="geocoder_evaluation_files/libs/bootstrap/bootstrap.min.js"></script>
+  <link href="geocoder_evaluation_files/libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+  <link href="geocoder_evaluation_files/libs/bootstrap/bootstrap.min.css" rel="stylesheet">
+  <script src="geocoder_evaluation_files/libs/kePrint-0.0.1/kePrint.js"></script>
+  <link href="geocoder_evaluation_files/libs/lightable-0.0.1/lightable.css" rel="stylesheet">
+  <!--[if lt IE 9]>
+    <script src="//cdnjs.cloudflare.com/ajax/libs/html5shiv/3.7.3/html5shiv-printshiv.min.js"></script>
+  <![endif]-->
+</head>
+<body>
+<div id="quarto-content" class="page-columns page-rows-contents page-layout-article">
+<div id="quarto-margin-sidebar" class="sidebar margin-sidebar">
+  <nav id="TOC" role="doc-toc">
+<h2 id="toc-title">Table of contents</h2>
+<ul>
+<li><a href="#introduction" class="nav-link active" data-scroll-target="#introduction">Introduction</a></li>
+<li><a href="#methods" class="nav-link" data-scroll-target="#methods">Methods</a>
+<ul class="collapse">
+<li><a href="#reference-data-description" class="nav-link" data-scroll-target="#reference-data-description">Reference Data Description</a></li>
+<li><a href="#rural-native-area-and-territory-classification" class="nav-link" data-scroll-target="#rural-native-area-and-territory-classification">Rural, Native Area, and Territory Classification</a></li>
+<li><a href="#geocoding" class="nav-link" data-scroll-target="#geocoding">Geocoding</a></li>
+<li><a href="#geocoding-performance-evaluation" class="nav-link" data-scroll-target="#geocoding-performance-evaluation">Geocoding Performance Evaluation</a></li>
+<li><a href="#combining-geocodes" class="nav-link" data-scroll-target="#combining-geocodes">Combining Geocodes</a></li>
+</ul></li>
+<li><a href="#results" class="nav-link" data-scroll-target="#results">Results</a>
+<ul class="collapse">
+<li><a href="#distribution-of-reference-data" class="nav-link" data-scroll-target="#distribution-of-reference-data">Distribution of Reference Data</a></li>
+<li><a href="#geocoding-performance-evaluation-1" class="nav-link" data-scroll-target="#geocoding-performance-evaluation-1">Geocoding Performance Evaluation</a></li>
+<li><a href="#combining-geocoder-results" class="nav-link" data-scroll-target="#combining-geocoder-results">Combining Geocoder Results</a></li>
+</ul></li>
+<li><a href="#discussion" class="nav-link" data-scroll-target="#discussion">Discussion</a></li>
+<li><a href="#citations" class="nav-link" data-scroll-target="#citations">Citations</a></li>
+</ul>
+</nav>
+</div>
+<main class="content" id="quarto-document-content">
+<header id="title-block-header">
+<h1 class="title display-7">Geocoder Evaluation</h1>
+</header>
+
+<section id="introduction" class="level2">
+<h2 class="anchored" data-anchor-id="introduction">Introduction</h2>
+<p>This document outlines the results of a performance evaluation of three geocoders to be used by the All Of Us Center for Linkage and Acquisition of Data (CLAD) geocoding milestone, and considers two approaches for integrating their results.</p>
+<p>We implemented three geocoders which met CLAD’s specific requirements, namely:</p>
+<ol type="1">
+<li>Can be deployed in the Palantir Foundry environment within a Docker container</li>
+<li>Can operate without an internet connection</li>
+<li>Cover the United States</li>
+</ol>
+<p>We considered multiple geocoders (see <a href="https://docs.google.com/document/d/1F-woq9EY1Oa712KZBapUbf5sFoPGbhDqvIzHIJuC7cI/edit?tab=t.0#heading=h.dv0iytdnmoo4">Geocoding Requirements D.08.01 Appendix 1</a>) and selected Nominatim, DeGAUSS, and PostGIS as potentially feasible to implement and meeting the project requirements.</p>
+</section>
+<section id="methods" class="level2">
+<h2 class="anchored" data-anchor-id="methods">Methods</h2>
+<section id="reference-data-description" class="level3">
+<h3 class="anchored" data-anchor-id="reference-data-description">Reference Data Description</h3>
+<p>Multiple shapefiles from HIFLD were downloaded that represent public or commercial buildings across the US, including hospitals, FDIC-insured banks, public schools, places of worship, etc. to get adequate coverage. From each respective shapefile, a full address string representing “street address, city, state, zip code” were aggregated and the centroid was calculated from the polygon shape for each data point. All these data points, or addresses, were concatenated into a single ESRI shapefile.</p>
+<p>With this ESRI shapefile, usaddress in Python was used to test parsing address components matching the USPS Publication 28 standard and OpenStreetMap convention for Nominatim. Using the respective centroids for each address, county names were determined by spatial join to the US county TIGER/Line shapefile. A second method was used to cross-validate the county names by merging to a zip code-county crosswalk file.</p>
+<p>From these addresses, a custom flag function was written to determine if address parsing with usaddress was “successful”. For example, PO boxes and addresses missing a “house number” were considered “failed”.</p>
+<p>The input data set of 272963 addresses contains a variety of public places with verified locations from the Homeland Infrastructure Foundation-Level Data data set. A copy is available <a href="%60github.com/brian-cy-chang/CLAD_Geospatial%60">here</a>.</p>
+<p>After initial processing, we manually reviewed a small subset of the HIFLD data, and found the geographic locations to be generally accurate. As a <em>sanity check</em> we checked that the geographic location in the data set fell into the same state listed in the address. 2392 failed this standard and were excluded. This did not appear to indicate systematically low accuracy in the reference geographic locations. Instead there seemed to have been errors in data transformation for particular areas (for example, a subset of addresses corresponding to a city in California all had geographic locations in Guam).</p>
+<p>After removing clearly incorrect or missing addresses from the HIFLD data set, 270568 remained.</p>
+<p>Despite some errors in the reference data set, we assume it is overall a reasonable representation of the true geographic locations of a set of addresses.</p>
+</section>
+<section id="rural-native-area-and-territory-classification" class="level3">
+<h3 class="anchored" data-anchor-id="rural-native-area-and-territory-classification">Rural, Native Area, and Territory Classification</h3>
+<p>As the All of Us cohort covers the entire United States and its territories and has a focus on underrepresented populations, we evaluated the performance of each geocoder in types of areas typically underrepresented in research: rural areas; US territories; and American Indian, Alaska Native, and Native Hawaiian (AIAN/NH) areas. To identify reference addresses in rural areas, we used the USDA Rural-Urban Commuting Area Codes data set <span class="citation" data-cites="ruca_cite">(<a href="#ref-ruca_cite" role="doc-biblioref"><span>“<span>USDA</span> <span>ERS</span> - Rural-Urban Commuting Area Codes”</span> n.d.</a>)</span>, which uses various population density, urbanization, and commute pattern metrics to classify areas by urbanness.</p>
+<p>To identify reference addresses in AIAN/NH areas, we used maps developed by the FCC to determine eligibility for licenses to unassigned 2.5 GHz wireless spectrum <span class="citation" data-cites="fcc_cite">(<a href="#ref-fcc_cite" role="doc-biblioref"><span>“2.5 <span>GHz</span> Rural Tribal Maps <span></span> Federal Communications Commission”</span> n.d.</a>)</span>.</p>
+<p><em>TO DO: how did we land on that one???</em></p>
+<p>We combined these categories to create a single location classification variable (<code>loc_class</code>) as:</p>
+<ul>
+<li><code>"territory"</code> if the point falls in a territory (there are no designated tribal areas in territories and not all territories received RUCA designations)</li>
+<li><code>"tribal"</code> if it falls in a AIAN/Native Hawaiian Area regardless of urbanicity</li>
+<li><code>"urban nontribal"</code> if the RUCA is 1, 2, or 3 and it falls in a state or DC outside of a tribal area</li>
+<li><code>"nonurban nontribal"</code> if the RUCA is not 1, 2, or 3 and it falls in a state or DC outside of a tribal area</li>
+</ul>
+</section>
+<section id="geocoding" class="level3">
+<h3 class="anchored" data-anchor-id="geocoding">Geocoding</h3>
+<section id="degauss" class="level4">
+<h4 class="anchored" data-anchor-id="degauss">DeGAUSS</h4>
+<p>DeGAUSS <span class="citation" data-cites="degauss_cite">(<a href="#ref-degauss_cite" role="doc-biblioref">Brokamp et al. 2018</a>)</span> (Decentralized Geomarker Assessment for Multi-Site Studies) is a geocoder specifically engineered for epidemiological studies such as All of Us. It is deployed as a <a href="https://degauss.org/geocoder/">docker container</a> and provides functionality to geocode US addresses against the US Census’s TIGER database.</p>
+</section>
+<section id="uw-postgis" class="level4">
+<h4 class="anchored" data-anchor-id="uw-postgis">UW PostGIS</h4>
+<p>The UW PostGIS geocoder is set up as an API on top of a PostgreSQL database with the PostGIS extension’s <a href="https://postgis.net/docs/Geocode.html">geocoding functionality</a> enabled. Like DeGAUSS, it uses the US Census’s TIGER database as its spatial reference data.</p>
+</section>
+<section id="nominatim" class="level4">
+<h4 class="anchored" data-anchor-id="nominatim">Nominatim</h4>
+<p>We used the Docker image available at <code>mediagis/nominatim-docker:4.4.0</code> to create a local instance of Nominatim. We used the following data source to populate our local Nominatim instance: https://download.geofabrik.de/north-america-latest.osm.pbf</p>
+</section>
+</section>
+<section id="geocoding-performance-evaluation" class="level3">
+<h3 class="anchored" data-anchor-id="geocoding-performance-evaluation">Geocoding Performance Evaluation</h3>
+<p>Goldberg <span class="citation" data-cites="goldberg_cite">(<a href="#ref-goldberg_cite" role="doc-biblioref">Goldberg et al. 2013</a>)</span> lists the following criteria as standard metrics to evaluate geocoder performance:</p>
+<ul>
+<li>match rate: the overall percentage of addresses the geocoder successfully geocoded</li>
+<li>match type: a categorical metric returned by the geocoder indicating geocode quality or confidence (e.g.&nbsp;parcel, street, intersection, Zip Code, or city)</li>
+<li>match score: a continuous metric returned by the geocoder indicating geocode quality or confidence (e.g.&nbsp;0 - 100)</li>
+<li>spatial accuracy: if the actual location of the address is known, the distance between it and the geocode</li>
+<li>administrative unit concordance: whether geocoded location falls into same administrative unit (e.g.&nbsp;Census tract) as the actual location</li>
+</ul>
+<p>We calculated summaries for match rate, spatial accuracy, and administrative unit concordance with the assumption that the geographic location in the HIFLD data set represented the true location of the address. We chose 2020 Census tract as the administrative unit to investigate for concordance. Census tracts can be thought of of as analogs for neighborhoods, and vary widely in size depending on population density.</p>
+<p>We also tabulated the match type and match score when they were returned by each geocoder, and compared these scores to the spatial accuracy in order to evaluate their usefulness.</p>
+</section>
+<section id="combining-geocodes" class="level3">
+<h3 class="anchored" data-anchor-id="combining-geocodes">Combining Geocodes</h3>
+<p><em>To do: describe</em></p>
+</section>
+</section>
+<section id="results" class="level2">
+<h2 class="anchored" data-anchor-id="results">Results</h2>
+<section id="distribution-of-reference-data" class="level3">
+<h3 class="anchored" data-anchor-id="distribution-of-reference-data">Distribution of Reference Data</h3>
+<p>The reference locations covered all states and DC. Puerto Rico and Guam each had several reference locations, while the US Virgin Islands and Northern Marianas each had a single reference location. The remainder of US territories did not have any reference locations.</p>
+<p>We summarize the distribution of reference locations and their classifications below.</p>
+<div class="cell">
+<div class="cell-output-display">
+<p><img src="geocoder_evaluation_files/figure-html/unnamed-chunk-2-1.svg" class="img-fluid" width="672"></p>
+</div>
+<div class="cell-output-display">
+<p><img src="geocoder_evaluation_files/figure-html/unnamed-chunk-2-2.svg" class="img-fluid" width="672"></p>
+</div>
+<div class="cell-output-display">
+<p><img src="geocoder_evaluation_files/figure-html/unnamed-chunk-2-3.svg" class="img-fluid" width="672"></p>
+</div>
+<div class="cell-output-display">
+<p><img src="geocoder_evaluation_files/figure-html/unnamed-chunk-2-4.svg" class="img-fluid" width="672"></p>
+</div>
+<div class="cell-output-display">
+<p><img src="geocoder_evaluation_files/figure-html/unnamed-chunk-2-5.svg" class="img-fluid" width="672"></p>
+</div>
+</div>
+<div class="cell">
+<div class="cell-output-display">
+<table class=" lightable-material" style="font-family: &quot;Source Sans Pro&quot;, helvetica, sans-serif; margin-left: auto; margin-right: auto;">
+ <thead>
+  <tr>
+   <th style="text-align:left;"> State/Territory </th>
+   <th style="text-align:right;"> nonurban nontribal </th>
+   <th style="text-align:right;"> urban nontribal </th>
+   <th style="text-align:right;"> tribal </th>
+   <th style="text-align:right;"> territory </th>
+   <th style="text-align:right;"> Total </th>
+  </tr>
+ </thead>
+<tbody>
+  <tr>
+   <td style="text-align:left;"> Alabama </td>
+   <td style="text-align:right;"> 950 </td>
+   <td style="text-align:right;"> 3,053 </td>
+   <td style="text-align:right;"> 0 </td>
+   <td style="text-align:right;"> 0 </td>
+   <td style="text-align:right;"> 4,003 </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> Alaska </td>
+   <td style="text-align:right;"> 75 </td>
+   <td style="text-align:right;"> 423 </td>
+   <td style="text-align:right;"> 486 </td>
+   <td style="text-align:right;"> 0 </td>
+   <td style="text-align:right;"> 984 </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> American Samoa </td>
+   <td style="text-align:right;"> 0 </td>
+   <td style="text-align:right;"> 0 </td>
+   <td style="text-align:right;"> 0 </td>
+   <td style="text-align:right;"> 0 </td>
+   <td style="text-align:right;"> 0 </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> Arizona </td>
+   <td style="text-align:right;"> 555 </td>
+   <td style="text-align:right;"> 4,496 </td>
+   <td style="text-align:right;"> 75 </td>
+   <td style="text-align:right;"> 0 </td>
+   <td style="text-align:right;"> 5,126 </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> Arkansas </td>
+   <td style="text-align:right;"> 1,101 </td>
+   <td style="text-align:right;"> 1,706 </td>
+   <td style="text-align:right;"> 0 </td>
+   <td style="text-align:right;"> 0 </td>
+   <td style="text-align:right;"> 2,807 </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> California </td>
+   <td style="text-align:right;"> 1,377 </td>
+   <td style="text-align:right;"> 25,845 </td>
+   <td style="text-align:right;"> 9 </td>
+   <td style="text-align:right;"> 0 </td>
+   <td style="text-align:right;"> 27,231 </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> Colorado </td>
+   <td style="text-align:right;"> 876 </td>
+   <td style="text-align:right;"> 4,137 </td>
+   <td style="text-align:right;"> 9 </td>
+   <td style="text-align:right;"> 0 </td>
+   <td style="text-align:right;"> 5,022 </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> Commonwealth of the Northern Mariana Islands </td>
+   <td style="text-align:right;"> 0 </td>
+   <td style="text-align:right;"> 0 </td>
+   <td style="text-align:right;"> 0 </td>
+   <td style="text-align:right;"> 1 </td>
+   <td style="text-align:right;"> 1 </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> Connecticut </td>
+   <td style="text-align:right;"> 55 </td>
+   <td style="text-align:right;"> 1,195 </td>
+   <td style="text-align:right;"> 3 </td>
+   <td style="text-align:right;"> 0 </td>
+   <td style="text-align:right;"> 1,253 </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> Delaware </td>
+   <td style="text-align:right;"> 111 </td>
+   <td style="text-align:right;"> 731 </td>
+   <td style="text-align:right;"> 0 </td>
+   <td style="text-align:right;"> 0 </td>
+   <td style="text-align:right;"> 842 </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> District of Columbia </td>
+   <td style="text-align:right;"> 0 </td>
+   <td style="text-align:right;"> 792 </td>
+   <td style="text-align:right;"> 0 </td>
+   <td style="text-align:right;"> 0 </td>
+   <td style="text-align:right;"> 792 </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> Florida </td>
+   <td style="text-align:right;"> 751 </td>
+   <td style="text-align:right;"> 17,752 </td>
+   <td style="text-align:right;"> 3 </td>
+   <td style="text-align:right;"> 0 </td>
+   <td style="text-align:right;"> 18,506 </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> Georgia </td>
+   <td style="text-align:right;"> 1,711 </td>
+   <td style="text-align:right;"> 8,133 </td>
+   <td style="text-align:right;"> 0 </td>
+   <td style="text-align:right;"> 0 </td>
+   <td style="text-align:right;"> 9,844 </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> Guam </td>
+   <td style="text-align:right;"> 0 </td>
+   <td style="text-align:right;"> 0 </td>
+   <td style="text-align:right;"> 0 </td>
+   <td style="text-align:right;"> 36 </td>
+   <td style="text-align:right;"> 36 </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> Hawaii </td>
+   <td style="text-align:right;"> 111 </td>
+   <td style="text-align:right;"> 365 </td>
+   <td style="text-align:right;"> 5 </td>
+   <td style="text-align:right;"> 0 </td>
+   <td style="text-align:right;"> 481 </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> Idaho </td>
+   <td style="text-align:right;"> 593 </td>
+   <td style="text-align:right;"> 1,058 </td>
+   <td style="text-align:right;"> 37 </td>
+   <td style="text-align:right;"> 0 </td>
+   <td style="text-align:right;"> 1,688 </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> Illinois </td>
+   <td style="text-align:right;"> 2,009 </td>
+   <td style="text-align:right;"> 10,060 </td>
+   <td style="text-align:right;"> 0 </td>
+   <td style="text-align:right;"> 0 </td>
+   <td style="text-align:right;"> 12,069 </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> Indiana </td>
+   <td style="text-align:right;"> 1,780 </td>
+   <td style="text-align:right;"> 5,380 </td>
+   <td style="text-align:right;"> 0 </td>
+   <td style="text-align:right;"> 0 </td>
+   <td style="text-align:right;"> 7,160 </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> Iowa </td>
+   <td style="text-align:right;"> 1,879 </td>
+   <td style="text-align:right;"> 1,657 </td>
+   <td style="text-align:right;"> 1 </td>
+   <td style="text-align:right;"> 0 </td>
+   <td style="text-align:right;"> 3,537 </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> Kansas </td>
+   <td style="text-align:right;"> 1,665 </td>
+   <td style="text-align:right;"> 1,821 </td>
+   <td style="text-align:right;"> 12 </td>
+   <td style="text-align:right;"> 0 </td>
+   <td style="text-align:right;"> 3,498 </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> Kentucky </td>
+   <td style="text-align:right;"> 1,833 </td>
+   <td style="text-align:right;"> 2,058 </td>
+   <td style="text-align:right;"> 0 </td>
+   <td style="text-align:right;"> 0 </td>
+   <td style="text-align:right;"> 3,891 </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> Louisiana </td>
+   <td style="text-align:right;"> 717 </td>
+   <td style="text-align:right;"> 3,533 </td>
+   <td style="text-align:right;"> 1 </td>
+   <td style="text-align:right;"> 0 </td>
+   <td style="text-align:right;"> 4,251 </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> Maine </td>
+   <td style="text-align:right;"> 283 </td>
+   <td style="text-align:right;"> 269 </td>
+   <td style="text-align:right;"> 0 </td>
+   <td style="text-align:right;"> 0 </td>
+   <td style="text-align:right;"> 552 </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> Maryland </td>
+   <td style="text-align:right;"> 209 </td>
+   <td style="text-align:right;"> 6,430 </td>
+   <td style="text-align:right;"> 0 </td>
+   <td style="text-align:right;"> 0 </td>
+   <td style="text-align:right;"> 6,639 </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> Massachusetts </td>
+   <td style="text-align:right;"> 74 </td>
+   <td style="text-align:right;"> 1,983 </td>
+   <td style="text-align:right;"> 0 </td>
+   <td style="text-align:right;"> 0 </td>
+   <td style="text-align:right;"> 2,057 </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> Michigan </td>
+   <td style="text-align:right;"> 2,179 </td>
+   <td style="text-align:right;"> 8,035 </td>
+   <td style="text-align:right;"> 33 </td>
+   <td style="text-align:right;"> 0 </td>
+   <td style="text-align:right;"> 10,247 </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> Minnesota </td>
+   <td style="text-align:right;"> 2,030 </td>
+   <td style="text-align:right;"> 3,589 </td>
+   <td style="text-align:right;"> 53 </td>
+   <td style="text-align:right;"> 0 </td>
+   <td style="text-align:right;"> 5,672 </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> Mississippi </td>
+   <td style="text-align:right;"> 1,320 </td>
+   <td style="text-align:right;"> 1,151 </td>
+   <td style="text-align:right;"> 4 </td>
+   <td style="text-align:right;"> 0 </td>
+   <td style="text-align:right;"> 2,475 </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> Missouri </td>
+   <td style="text-align:right;"> 1,810 </td>
+   <td style="text-align:right;"> 4,387 </td>
+   <td style="text-align:right;"> 0 </td>
+   <td style="text-align:right;"> 0 </td>
+   <td style="text-align:right;"> 6,197 </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> Montana </td>
+   <td style="text-align:right;"> 787 </td>
+   <td style="text-align:right;"> 390 </td>
+   <td style="text-align:right;"> 78 </td>
+   <td style="text-align:right;"> 0 </td>
+   <td style="text-align:right;"> 1,255 </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> Nebraska </td>
+   <td style="text-align:right;"> 1,128 </td>
+   <td style="text-align:right;"> 1,180 </td>
+   <td style="text-align:right;"> 15 </td>
+   <td style="text-align:right;"> 0 </td>
+   <td style="text-align:right;"> 2,323 </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> Nevada </td>
+   <td style="text-align:right;"> 206 </td>
+   <td style="text-align:right;"> 1,615 </td>
+   <td style="text-align:right;"> 5 </td>
+   <td style="text-align:right;"> 0 </td>
+   <td style="text-align:right;"> 1,826 </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> New Hampshire </td>
+   <td style="text-align:right;"> 171 </td>
+   <td style="text-align:right;"> 219 </td>
+   <td style="text-align:right;"> 0 </td>
+   <td style="text-align:right;"> 0 </td>
+   <td style="text-align:right;"> 390 </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> New Jersey </td>
+   <td style="text-align:right;"> 21 </td>
+   <td style="text-align:right;"> 1,020 </td>
+   <td style="text-align:right;"> 0 </td>
+   <td style="text-align:right;"> 0 </td>
+   <td style="text-align:right;"> 1,041 </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> New Mexico </td>
+   <td style="text-align:right;"> 587 </td>
+   <td style="text-align:right;"> 1,204 </td>
+   <td style="text-align:right;"> 71 </td>
+   <td style="text-align:right;"> 0 </td>
+   <td style="text-align:right;"> 1,862 </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> New York </td>
+   <td style="text-align:right;"> 1,370 </td>
+   <td style="text-align:right;"> 15,468 </td>
+   <td style="text-align:right;"> 8 </td>
+   <td style="text-align:right;"> 0 </td>
+   <td style="text-align:right;"> 16,846 </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> North Carolina </td>
+   <td style="text-align:right;"> 2,359 </td>
+   <td style="text-align:right;"> 6,801 </td>
+   <td style="text-align:right;"> 11 </td>
+   <td style="text-align:right;"> 0 </td>
+   <td style="text-align:right;"> 9,171 </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> North Dakota </td>
+   <td style="text-align:right;"> 613 </td>
+   <td style="text-align:right;"> 385 </td>
+   <td style="text-align:right;"> 33 </td>
+   <td style="text-align:right;"> 0 </td>
+   <td style="text-align:right;"> 1,031 </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> Ohio </td>
+   <td style="text-align:right;"> 2,597 </td>
+   <td style="text-align:right;"> 8,928 </td>
+   <td style="text-align:right;"> 0 </td>
+   <td style="text-align:right;"> 0 </td>
+   <td style="text-align:right;"> 11,525 </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> Oklahoma </td>
+   <td style="text-align:right;"> 123 </td>
+   <td style="text-align:right;"> 2,030 </td>
+   <td style="text-align:right;"> 2,120 </td>
+   <td style="text-align:right;"> 0 </td>
+   <td style="text-align:right;"> 4,273 </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> Oregon </td>
+   <td style="text-align:right;"> 971 </td>
+   <td style="text-align:right;"> 2,454 </td>
+   <td style="text-align:right;"> 5 </td>
+   <td style="text-align:right;"> 0 </td>
+   <td style="text-align:right;"> 3,430 </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> Pennsylvania </td>
+   <td style="text-align:right;"> 1,540 </td>
+   <td style="text-align:right;"> 8,568 </td>
+   <td style="text-align:right;"> 0 </td>
+   <td style="text-align:right;"> 0 </td>
+   <td style="text-align:right;"> 10,108 </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> Puerto Rico </td>
+   <td style="text-align:right;"> 0 </td>
+   <td style="text-align:right;"> 0 </td>
+   <td style="text-align:right;"> 0 </td>
+   <td style="text-align:right;"> 71 </td>
+   <td style="text-align:right;"> 71 </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> Rhode Island </td>
+   <td style="text-align:right;"> 0 </td>
+   <td style="text-align:right;"> 339 </td>
+   <td style="text-align:right;"> 0 </td>
+   <td style="text-align:right;"> 0 </td>
+   <td style="text-align:right;"> 339 </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> South Carolina </td>
+   <td style="text-align:right;"> 979 </td>
+   <td style="text-align:right;"> 3,826 </td>
+   <td style="text-align:right;"> 0 </td>
+   <td style="text-align:right;"> 0 </td>
+   <td style="text-align:right;"> 4,805 </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> South Dakota </td>
+   <td style="text-align:right;"> 773 </td>
+   <td style="text-align:right;"> 422 </td>
+   <td style="text-align:right;"> 67 </td>
+   <td style="text-align:right;"> 0 </td>
+   <td style="text-align:right;"> 1,262 </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> Tennessee </td>
+   <td style="text-align:right;"> 1,976 </td>
+   <td style="text-align:right;"> 4,728 </td>
+   <td style="text-align:right;"> 0 </td>
+   <td style="text-align:right;"> 0 </td>
+   <td style="text-align:right;"> 6,704 </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> Texas </td>
+   <td style="text-align:right;"> 3,412 </td>
+   <td style="text-align:right;"> 20,392 </td>
+   <td style="text-align:right;"> 1 </td>
+   <td style="text-align:right;"> 0 </td>
+   <td style="text-align:right;"> 23,805 </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> United States Virgin Islands </td>
+   <td style="text-align:right;"> 0 </td>
+   <td style="text-align:right;"> 0 </td>
+   <td style="text-align:right;"> 0 </td>
+   <td style="text-align:right;"> 2 </td>
+   <td style="text-align:right;"> 2 </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> Utah </td>
+   <td style="text-align:right;"> 306 </td>
+   <td style="text-align:right;"> 1,372 </td>
+   <td style="text-align:right;"> 23 </td>
+   <td style="text-align:right;"> 0 </td>
+   <td style="text-align:right;"> 1,701 </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> Vermont </td>
+   <td style="text-align:right;"> 156 </td>
+   <td style="text-align:right;"> 61 </td>
+   <td style="text-align:right;"> 0 </td>
+   <td style="text-align:right;"> 0 </td>
+   <td style="text-align:right;"> 217 </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> Virginia </td>
+   <td style="text-align:right;"> 936 </td>
+   <td style="text-align:right;"> 5,650 </td>
+   <td style="text-align:right;"> 0 </td>
+   <td style="text-align:right;"> 0 </td>
+   <td style="text-align:right;"> 6,586 </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> Washington </td>
+   <td style="text-align:right;"> 749 </td>
+   <td style="text-align:right;"> 5,011 </td>
+   <td style="text-align:right;"> 52 </td>
+   <td style="text-align:right;"> 0 </td>
+   <td style="text-align:right;"> 5,812 </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> West Virginia </td>
+   <td style="text-align:right;"> 687 </td>
+   <td style="text-align:right;"> 1,354 </td>
+   <td style="text-align:right;"> 0 </td>
+   <td style="text-align:right;"> 0 </td>
+   <td style="text-align:right;"> 2,041 </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> Wisconsin </td>
+   <td style="text-align:right;"> 1,483 </td>
+   <td style="text-align:right;"> 3,166 </td>
+   <td style="text-align:right;"> 8 </td>
+   <td style="text-align:right;"> 0 </td>
+   <td style="text-align:right;"> 4,657 </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> Wyoming </td>
+   <td style="text-align:right;"> 386 </td>
+   <td style="text-align:right;"> 209 </td>
+   <td style="text-align:right;"> 23 </td>
+   <td style="text-align:right;"> 0 </td>
+   <td style="text-align:right;"> 618 </td>
+  </tr>
+</tbody>
+</table>
+
+</div>
+</div>
+<p>Across all regions, the total number of points in each classification were as follows:</p>
+<div class="cell">
+<div class="cell-output-display">
+<table class=" lightable-material" style="font-family: &quot;Source Sans Pro&quot;, helvetica, sans-serif; margin-left: auto; margin-right: auto;">
+ <thead>
+  <tr>
+   <th style="text-align:left;"> Location Class </th>
+   <th style="text-align:right;"> Total </th>
+  </tr>
+ </thead>
+<tbody>
+  <tr>
+   <td style="text-align:left;"> nonurban nontribal </td>
+   <td style="text-align:right;"> 50,372 </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> territory </td>
+   <td style="text-align:right;"> 110 </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> tribal </td>
+   <td style="text-align:right;"> 3,252 </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> urban nontribal </td>
+   <td style="text-align:right;"> 216,834 </td>
+  </tr>
+</tbody>
+</table>
+
+</div>
+</div>
+</section>
+<section id="geocoding-performance-evaluation-1" class="level3">
+<h3 class="anchored" data-anchor-id="geocoding-performance-evaluation-1">Geocoding Performance Evaluation</h3>
+<section id="match-rate" class="level4">
+<h4 class="anchored" data-anchor-id="match-rate">Match Rate</h4>
+<p>DeGAUSS and UW PostGIS returned a single result for more than 98% of reference locations. Nominatim performed notably less well, returning a single result for a minority of reference locations, and returning no result at all for almost a quarter of them.</p>
+<div class="cell">
+<div class="cell-output-display">
+<table class=" lightable-material" style="font-family: &quot;Source Sans Pro&quot;, helvetica, sans-serif; margin-left: auto; margin-right: auto;">
+ <thead>
+<tr>
+<th style="empty-cells: hide;" colspan="1"></th>
+<th style="padding-bottom:0; padding-left:3px;padding-right:3px;text-align: center; " colspan="3"><div style="border-bottom: 1px solid #eee; padding-bottom: 16px; padding-top: 16px; height: 56px;">Matches</div></th>
+</tr>
+  <tr>
+   <th style="text-align:left;"> geocoder </th>
+   <th style="text-align:left;"> Single </th>
+   <th style="text-align:left;"> Multiple </th>
+   <th style="text-align:left;"> None </th>
+  </tr>
+ </thead>
+<tbody>
+  <tr>
+   <td style="text-align:left;"> degauss </td>
+   <td style="text-align:left;"> 267526 (98.01%) </td>
+   <td style="text-align:left;"> 5325 (1.95%) </td>
+   <td style="text-align:left;"> 109 (0.04%) </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> nominatim </td>
+   <td style="text-align:left;"> 130331 (47.75%) </td>
+   <td style="text-align:left;"> 74737 (27.38%) </td>
+   <td style="text-align:left;"> 67892 (24.87%) </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> postgis </td>
+   <td style="text-align:left;"> 271641 (99.52%) </td>
+   <td style="text-align:left;"> 0 (0%) </td>
+   <td style="text-align:left;"> 1319 (0.48%) </td>
+  </tr>
+</tbody>
+</table>
+
+</div>
+</div>
+</section>
+<section id="match-type-and-match-score" class="level4">
+<h4 class="anchored" data-anchor-id="match-type-and-match-score">Match Type and Match Score</h4>
+<section id="degauss-1" class="level5">
+<h5 class="anchored" data-anchor-id="degauss-1">Degauss</h5>
+<p>DeGAUSS provides both a match type and match score. The match type field returned is called “precision” and has one of the following values (from the DeGAUSS geocoder documtenation <span class="citation" data-cites="degauss_cite">(<a href="#ref-degauss_cite" role="doc-biblioref">Brokamp et al. 2018</a>)</span>):</p>
+<ul>
+<li>“range”: interpolated based on address ranges from street segments</li>
+<li>“street”: center of the matched street</li>
+<li>“intersection”: intersection of two streets</li>
+<li>“zip”: centroid of the matched zip code</li>
+<li>“city”: centroid of the matched city</li>
+</ul>
+<p>The match score field is called “score” and, per the DeGAUSS geocoding documentation, is “the percentage of text match between the given address and the geocoded result, expressed as a number between 0 and 1. A higher score indicates a closer match. <span class="citation" data-cites="degauss_cite">(<a href="#ref-degauss_cite" role="doc-biblioref">Brokamp et al. 2018</a>)</span>” Scores can only be compared within precisions.</p>
+<p>When the geocoder returned multiple geocodes for an address, the geocodes for that address had the same “precision” in all cases.</p>
+<div class="cell">
+<div class="cell-output-display">
+<table class=" lightable-material" style="font-family: &quot;Source Sans Pro&quot;, helvetica, sans-serif; margin-left: auto; margin-right: auto;">
+ <thead>
+<tr>
+<th style="empty-cells: hide;" colspan="3"></th>
+<th style="padding-bottom:0; padding-left:3px;padding-right:3px;text-align: center; " colspan="4"><div style="border-bottom: 1px solid #eee; padding-bottom: 16px; padding-top: 16px; height: 56px;">Score</div></th>
+</tr>
+  <tr>
+   <th style="text-align:left;"> Precision </th>
+   <th style="text-align:right;"> Count </th>
+   <th style="text-align:left;"> Percentage </th>
+   <th style="text-align:right;"> Min. </th>
+   <th style="text-align:right;"> Mean </th>
+   <th style="text-align:right;"> Median </th>
+   <th style="text-align:right;"> Max. </th>
+  </tr>
+ </thead>
+<tbody>
+  <tr>
+   <td style="text-align:left;"> Missing </td>
+   <td style="text-align:right;"> 109 </td>
+   <td style="text-align:left;"> 0.04 % </td>
+   <td style="text-align:right;"> — </td>
+   <td style="text-align:right;"> — </td>
+   <td style="text-align:right;"> — </td>
+   <td style="text-align:right;"> — </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> city </td>
+   <td style="text-align:right;"> 3 </td>
+   <td style="text-align:left;"> 0 % </td>
+   <td style="text-align:right;"> 0.51 </td>
+   <td style="text-align:right;"> 0.51 </td>
+   <td style="text-align:right;"> 0.51 </td>
+   <td style="text-align:right;"> 0.51 </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> intersection </td>
+   <td style="text-align:right;"> 105 </td>
+   <td style="text-align:left;"> 0.04 % </td>
+   <td style="text-align:right;"> 0.45 </td>
+   <td style="text-align:right;"> 0.70 </td>
+   <td style="text-align:right;"> 0.70 </td>
+   <td style="text-align:right;"> 0.85 </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> range </td>
+   <td style="text-align:right;"> 237,422 </td>
+   <td style="text-align:left;"> 86.96 % </td>
+   <td style="text-align:right;"> 0.27 </td>
+   <td style="text-align:right;"> 0.96 </td>
+   <td style="text-align:right;"> 1.00 </td>
+   <td style="text-align:right;"> 1.00 </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> street </td>
+   <td style="text-align:right;"> 33,161 </td>
+   <td style="text-align:left;"> 12.15 % </td>
+   <td style="text-align:right;"> 0.13 </td>
+   <td style="text-align:right;"> 0.70 </td>
+   <td style="text-align:right;"> 0.72 </td>
+   <td style="text-align:right;"> 1.00 </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> zip </td>
+   <td style="text-align:right;"> 2,237 </td>
+   <td style="text-align:left;"> 0.82 % </td>
+   <td style="text-align:right;"> 0.50 </td>
+   <td style="text-align:right;"> 0.62 </td>
+   <td style="text-align:right;"> 0.61 </td>
+   <td style="text-align:right;"> 1.00 </td>
+  </tr>
+</tbody>
+</table>
+
+</div>
+</div>
+<p>DeGAUSS found one or more “range” matches (the most accurate) or “street” matches (the second most accurate) for 99% of reference locations.</p>
+</section>
+<section id="uw-postgis-1" class="level5">
+<h5 class="anchored" data-anchor-id="uw-postgis-1">UW PostGIS</h5>
+<p>PostGIS provides a match score called “rating” with zero being the most confident and 100 being the least confident. However, occasionally the geocoder did return a value greater than 100 (it did so 438 times in this exercise). Most reference locations were assigned a “rating” of exactly zero.</p>
+<p>We present the summary statistics and a density plot of the “rating” field for UW PostGIS results below:</p>
+<div class="cell">
+<div class="cell-output-display">
+<table class=" lightable-material" style="font-family: &quot;Source Sans Pro&quot;, helvetica, sans-serif; margin-left: auto; margin-right: auto;">
+ <thead>
+  <tr>
+   <th style="text-align:right;"> Min. </th>
+   <th style="text-align:right;"> 25th Percentile </th>
+   <th style="text-align:right;"> Mean </th>
+   <th style="text-align:right;"> Median </th>
+   <th style="text-align:right;"> 75th Percentile </th>
+   <th style="text-align:right;"> Max. </th>
+   <th style="text-align:left;"> Missing </th>
+  </tr>
+ </thead>
+<tbody>
+  <tr>
+   <td style="text-align:right;"> 0 </td>
+   <td style="text-align:right;"> 0 </td>
+   <td style="text-align:right;"> 9.49 </td>
+   <td style="text-align:right;"> 0 </td>
+   <td style="text-align:right;"> 10 </td>
+   <td style="text-align:right;"> 150 </td>
+   <td style="text-align:left;"> 1319 (0.48%) </td>
+  </tr>
+</tbody>
+</table>
+
+</div>
+</div>
+<div class="cell">
+<div class="cell-output-display">
+<p><img src="geocoder_evaluation_files/figure-html/unnamed-chunk-8-1.svg" class="img-fluid" width="672"></p>
+</div>
+</div>
+</section>
+<section id="nominatim-1" class="level5">
+<h5 class="anchored" data-anchor-id="nominatim-1">Nominatim</h5>
+<p>Nominatim does not return a score or match type useful in reporting geocoding confidence.</p>
+</section>
+</section>
+<section id="spatial-accuracy" class="level4">
+<h4 class="anchored" data-anchor-id="spatial-accuracy">Spatial Accuracy</h4>
+<p>We calculated the distance in meters between each geocode and the geographic location provided in the reference data set. In cases where a geocoder returned more than one geocode for a given location, we first calculated the mean of the distances for all of a given reference location’s geocoddes, without regard to direction, before calculating the summary statistics presented (e.g.&nbsp;a location for which a geocoder returned two geocodes, one 100 meters North of the true location and one 50 meters East of the true location, we respresented it as having an average error of 75 meters for the purpose of calculating this summary).</p>
+<div class="cell">
+<div class="cell-output-display">
+<table class=" lightable-material" style="font-family: &quot;Source Sans Pro&quot;, helvetica, sans-serif; margin-left: auto; margin-right: auto;">
+ <thead>
+<tr>
+<th style="empty-cells: hide;" colspan="2"></th>
+<th style="padding-bottom:0; padding-left:3px;padding-right:3px;text-align: center; " colspan="6"><div style="border-bottom: 1px solid #eee; padding-bottom: 16px; padding-top: 16px; height: 56px;">Geocoding Error (meters)</div></th>
+</tr>
+  <tr>
+   <th style="text-align:left;"> geocoder </th>
+   <th style="text-align:left;"> multiples </th>
+   <th style="text-align:right;"> Min </th>
+   <th style="text-align:right;"> 25th Percentile </th>
+   <th style="text-align:right;"> Mean </th>
+   <th style="text-align:right;"> Median </th>
+   <th style="text-align:right;"> 75th Percentile </th>
+   <th style="text-align:right;"> Max </th>
+  </tr>
+ </thead>
+<tbody>
+  <tr>
+   <td style="text-align:left;"> degauss </td>
+   <td style="text-align:left;"> Single </td>
+   <td style="text-align:right;"> 0 </td>
+   <td style="text-align:right;"> 33 </td>
+   <td style="text-align:right;"> 14,479 </td>
+   <td style="text-align:right;"> 82 </td>
+   <td style="text-align:right;"> 215 </td>
+   <td style="text-align:right;"> 9,953,709 </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> degauss </td>
+   <td style="text-align:left;"> Multiple </td>
+   <td style="text-align:right;"> 1 </td>
+   <td style="text-align:right;"> 131 </td>
+   <td style="text-align:right;"> 19,619 </td>
+   <td style="text-align:right;"> 352 </td>
+   <td style="text-align:right;"> 1,375 </td>
+   <td style="text-align:right;"> 9,350,724 </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> nominatim </td>
+   <td style="text-align:left;"> Single </td>
+   <td style="text-align:right;"> 0 </td>
+   <td style="text-align:right;"> 29 </td>
+   <td style="text-align:right;"> 12,627 </td>
+   <td style="text-align:right;"> 96 </td>
+   <td style="text-align:right;"> 446 </td>
+   <td style="text-align:right;"> 9,428,270 </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> nominatim </td>
+   <td style="text-align:left;"> Multiple </td>
+   <td style="text-align:right;"> 1 </td>
+   <td style="text-align:right;"> 251 </td>
+   <td style="text-align:right;"> 22,215 </td>
+   <td style="text-align:right;"> 793 </td>
+   <td style="text-align:right;"> 1,807 </td>
+   <td style="text-align:right;"> 9,437,605 </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> postgis </td>
+   <td style="text-align:left;"> Single </td>
+   <td style="text-align:right;"> 0 </td>
+   <td style="text-align:right;"> 36 </td>
+   <td style="text-align:right;"> 23,080 </td>
+   <td style="text-align:right;"> 95 </td>
+   <td style="text-align:right;"> 381 </td>
+   <td style="text-align:right;"> 9,441,394 </td>
+  </tr>
+</tbody>
+</table>
+
+</div>
+</div>
+</section>
+<section id="administrative-unit-concordance" class="level4">
+<h4 class="anchored" data-anchor-id="administrative-unit-concordance">Administrative Unit Concordance</h4>
+<p>We show below the counts and percentages of geocodes that correctly identified the 2020 census tract for the reference locations. We separately summarized locations that received multiple geocodes, showing counts and percentages of locations for which all the geocodes returned were correct (“All Correct”) and for which any of the geocodes returned was correct (“Any Correct”). Recall that UW PostGIS only ever returned a single geocode per location.</p>
+<div class="cell">
+<div class="cell-output-display">
+<table class=" lightable-material" style="font-family: &quot;Source Sans Pro&quot;, helvetica, sans-serif; margin-left: auto; margin-right: auto;">
+ <thead>
+<tr>
+<th style="empty-cells: hide;" colspan="1"></th>
+<th style="padding-bottom:0; padding-left:3px;padding-right:3px;text-align: center; " colspan="2"><div style="border-bottom: 1px solid #eee; padding-bottom: 16px; padding-top: 16px; height: 56px;">Single Geocode</div></th>
+<th style="padding-bottom:0; padding-left:3px;padding-right:3px;text-align: center; " colspan="4"><div style="border-bottom: 1px solid #eee; padding-bottom: 16px; padding-top: 16px; height: 56px;">Multiple Geocodes</div></th>
+</tr>
+  <tr>
+   <th style="text-align:left;"> geocoder </th>
+   <th style="text-align:right;"> Count Correct </th>
+   <th style="text-align:left;"> Percent Correct </th>
+   <th style="text-align:right;"> Count All Correct </th>
+   <th style="text-align:left;"> Percent All Correct </th>
+   <th style="text-align:right;"> Count Any Correct </th>
+   <th style="text-align:left;"> Percent Any Correct </th>
+  </tr>
+ </thead>
+<tbody>
+  <tr>
+   <td style="text-align:left;"> degauss </td>
+   <td style="text-align:right;"> 226,007 </td>
+   <td style="text-align:left;"> 84.48% </td>
+   <td style="text-align:right;"> 2,677 </td>
+   <td style="text-align:left;"> 50.27% </td>
+   <td style="text-align:right;"> 3,798 </td>
+   <td style="text-align:left;"> 71.32% </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> nominatim </td>
+   <td style="text-align:right;"> 107,221 </td>
+   <td style="text-align:left;"> 82.27% </td>
+   <td style="text-align:right;"> 29,082 </td>
+   <td style="text-align:left;"> 38.91% </td>
+   <td style="text-align:right;"> 54,501 </td>
+   <td style="text-align:left;"> 72.92% </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> postgis </td>
+   <td style="text-align:right;"> 215,791 </td>
+   <td style="text-align:left;"> 79.44% </td>
+   <td style="text-align:right;"> — </td>
+   <td style="text-align:left;"> — </td>
+   <td style="text-align:right;"> — </td>
+   <td style="text-align:left;"> — </td>
+  </tr>
+</tbody>
+</table>
+
+</div>
+</div>
+</section>
+<section id="summarized-results-by-location-class" class="level4">
+<h4 class="anchored" data-anchor-id="summarized-results-by-location-class">Summarized Results by Location Class</h4>
+<p>We see in both the spatial accuracy and administrative concordance metrics that when DeGAUSS or Nominatim returned multiple geocodes, they were less reliable. In addition, the presence of multiple geocode estimates for each location complicates calculating and comparing quality metrics, especially as we expand our analysis to include various classes of locations (i.e.&nbsp;urban, non-urban, native, and territory). Given both the quality and interpretability issues, we believe it is reasonable to exclude any non-singleton geocodes returned as we continue to present results.</p>
+<div class="cell">
+<div class="cell-output-display">
+<table class=" lightable-material" style="font-family: &quot;Source Sans Pro&quot;, helvetica, sans-serif; margin-left: auto; margin-right: auto;">
+ <thead>
+  <tr>
+   <th style="text-align:left;"> geocoder </th>
+   <th style="text-align:left;"> loc_class </th>
+   <th style="text-align:right;"> N </th>
+   <th style="text-align:right;"> Match Rate (%) </th>
+   <th style="text-align:right;"> Match Type Acceptable* (%) </th>
+   <th style="text-align:right;"> Mean Match Score** </th>
+   <th style="text-align:right;"> Median Spatial Accuracy (m) </th>
+   <th style="text-align:right;"> Administrative Unit Concordance (% Agreement at Tract) </th>
+  </tr>
+ </thead>
+<tbody>
+  <tr>
+   <td style="text-align:left;"> degauss </td>
+   <td style="text-align:left;"> nonurban nontribal </td>
+   <td style="text-align:right;"> 49,109 </td>
+   <td style="text-align:right;"> 99.98 </td>
+   <td style="text-align:right;"> 98.69 </td>
+   <td style="text-align:right;"> — </td>
+   <td style="text-align:right;"> 103.34 </td>
+   <td style="text-align:right;"> 88.16 </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> nominatim </td>
+   <td style="text-align:left;"> nonurban nontribal </td>
+   <td style="text-align:right;"> 40,105 </td>
+   <td style="text-align:right;"> 59.15 </td>
+   <td style="text-align:right;"> — </td>
+   <td style="text-align:right;"> — </td>
+   <td style="text-align:right;"> 174.89 </td>
+   <td style="text-align:right;"> 87.72 </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> postgis </td>
+   <td style="text-align:left;"> nonurban nontribal </td>
+   <td style="text-align:right;"> 50,372 </td>
+   <td style="text-align:right;"> 99.86 </td>
+   <td style="text-align:right;"> — </td>
+   <td style="text-align:right;"> 11.19 </td>
+   <td style="text-align:right;"> 125.70 </td>
+   <td style="text-align:right;"> 81.40 </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> degauss </td>
+   <td style="text-align:left;"> territory </td>
+   <td style="text-align:right;"> 99 </td>
+   <td style="text-align:right;"> 100.00 </td>
+   <td style="text-align:right;"> 61.62 </td>
+   <td style="text-align:right;"> — </td>
+   <td style="text-align:right;"> 3,153.06 </td>
+   <td style="text-align:right;"> 29.29 </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> nominatim </td>
+   <td style="text-align:left;"> territory </td>
+   <td style="text-align:right;"> 110 </td>
+   <td style="text-align:right;"> 0.00 </td>
+   <td style="text-align:right;"> — </td>
+   <td style="text-align:right;"> — </td>
+   <td style="text-align:right;"> — </td>
+   <td style="text-align:right;"> — </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> postgis </td>
+   <td style="text-align:left;"> territory </td>
+   <td style="text-align:right;"> 110 </td>
+   <td style="text-align:right;"> 0.00 </td>
+   <td style="text-align:right;"> — </td>
+   <td style="text-align:right;"> — </td>
+   <td style="text-align:right;"> — </td>
+   <td style="text-align:right;"> — </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> degauss </td>
+   <td style="text-align:left;"> tribal </td>
+   <td style="text-align:right;"> 3,164 </td>
+   <td style="text-align:right;"> 99.81 </td>
+   <td style="text-align:right;"> 96.65 </td>
+   <td style="text-align:right;"> — </td>
+   <td style="text-align:right;"> 142.64 </td>
+   <td style="text-align:right;"> 83.19 </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> nominatim </td>
+   <td style="text-align:left;"> tribal </td>
+   <td style="text-align:right;"> 2,705 </td>
+   <td style="text-align:right;"> 43.73 </td>
+   <td style="text-align:right;"> — </td>
+   <td style="text-align:right;"> — </td>
+   <td style="text-align:right;"> 239.36 </td>
+   <td style="text-align:right;"> 84.36 </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> postgis </td>
+   <td style="text-align:left;"> tribal </td>
+   <td style="text-align:right;"> 3,252 </td>
+   <td style="text-align:right;"> 99.54 </td>
+   <td style="text-align:right;"> — </td>
+   <td style="text-align:right;"> 13.00 </td>
+   <td style="text-align:right;"> 169.74 </td>
+   <td style="text-align:right;"> 79.89 </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> degauss </td>
+   <td style="text-align:left;"> urban nontribal </td>
+   <td style="text-align:right;"> 212,903 </td>
+   <td style="text-align:right;"> 99.96 </td>
+   <td style="text-align:right;"> 99.28 </td>
+   <td style="text-align:right;"> — </td>
+   <td style="text-align:right;"> 75.06 </td>
+   <td style="text-align:right;"> 84.61 </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> nominatim </td>
+   <td style="text-align:left;"> urban nontribal </td>
+   <td style="text-align:right;"> 153,896 </td>
+   <td style="text-align:right;"> 67.81 </td>
+   <td style="text-align:right;"> — </td>
+   <td style="text-align:right;"> — </td>
+   <td style="text-align:right;"> 78.79 </td>
+   <td style="text-align:right;"> 81.84 </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> postgis </td>
+   <td style="text-align:left;"> urban nontribal </td>
+   <td style="text-align:right;"> 216,834 </td>
+   <td style="text-align:right;"> 99.49 </td>
+   <td style="text-align:right;"> — </td>
+   <td style="text-align:right;"> 9.09 </td>
+   <td style="text-align:right;"> 86.84 </td>
+   <td style="text-align:right;"> 79.85 </td>
+  </tr>
+</tbody>
+</table>
+
+</div>
+</div>
+<p>* Acceptable match types are “street” or “range” in the DeGAUSS geocoder. <br> ** UW PostGIS scores are only meaningful within match type, so they are not reported here.</p>
+</section>
+</section>
+<section id="combining-geocoder-results" class="level3">
+<h3 class="anchored" data-anchor-id="combining-geocoder-results">Combining Geocoder Results</h3>
+<section id="strategy-a-use-the-single-best-available-gc" class="level4">
+<h4 class="anchored" data-anchor-id="strategy-a-use-the-single-best-available-gc">Strategy A: Use the Single Best Available GC</h4>
+<p>Accept the first acceptable geocode in this order:</p>
+<ol type="1">
+<li>PostGIS with confidence = 0</li>
+<li>Degauss with precision “range”</li>
+<li>PostGIS with confidence &lt;= 20</li>
+<li>Nominatim (N = 1)</li>
+<li>Degauss with precision “street”</li>
+<li>PostGIS with confidence &gt; 20</li>
+</ol>
+<div class="cell">
+<div class="cell-output-display">
+<table class=" lightable-material" style="font-family: &quot;Source Sans Pro&quot;, helvetica, sans-serif; margin-left: auto; margin-right: auto;">
+ <thead>
+<tr>
+<th style="empty-cells: hide;" colspan="1"></th>
+<th style="empty-cells: hide;" colspan="1"></th>
+<th style="padding-bottom:0; padding-left:3px;padding-right:3px;text-align: center; " colspan="2"><div style="border-bottom: 1px solid #eee; padding-bottom: 16px; padding-top: 16px; height: 56px;">Performance</div></th>
+</tr>
+  <tr>
+   <th style="text-align:left;"> rank </th>
+   <th style="text-align:right;"> N </th>
+   <th style="text-align:right;"> Median Spatial Accuracy (m) </th>
+   <th style="text-align:right;"> Administrative Unit Concordance (% Agreement at Tract) </th>
+  </tr>
+ </thead>
+<tbody>
+  <tr>
+   <td style="text-align:left;"> 1 - Postgis Rating = 0 </td>
+   <td style="text-align:right;"> 137,334 </td>
+   <td style="text-align:right;"> 61 </td>
+   <td style="text-align:right;"> 94 </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> 2 - Degauss Precision = "range" </td>
+   <td style="text-align:right;"> 99,036 </td>
+   <td style="text-align:right;"> 81 </td>
+   <td style="text-align:right;"> 89 </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> 3 - Postgis Rating &lt;= 20 </td>
+   <td style="text-align:right;"> 21,843 </td>
+   <td style="text-align:right;"> 334 </td>
+   <td style="text-align:right;"> 67 </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> 4 - Nominatim </td>
+   <td style="text-align:right;"> 2,683 </td>
+   <td style="text-align:right;"> 189 </td>
+   <td style="text-align:right;"> 75 </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> 5 - Degauss Precision = "street" </td>
+   <td style="text-align:right;"> 7,275 </td>
+   <td style="text-align:right;"> 3,739 </td>
+   <td style="text-align:right;"> 35 </td>
+  </tr>
+  <tr>
+   <td style="text-align:left;"> 999 - None </td>
+   <td style="text-align:right;"> 5,928 </td>
+   <td style="text-align:right;"> 4,435 </td>
+   <td style="text-align:right;"> 0 </td>
+  </tr>
+</tbody>
+</table>
+
+</div>
+</div>
+<div class="cell">
+<div class="cell-output-display">
+<table class=" lightable-material" style="font-family: &quot;Source Sans Pro&quot;, helvetica, sans-serif; margin-left: auto; margin-right: auto;">
+ <thead>
+<tr><th style="padding-bottom:0; padding-left:3px;padding-right:3px;text-align: center; " colspan="3"><div style="border-bottom: 1px solid #eee; padding-bottom: 16px; padding-top: 16px; height: 56px;">Total</div></th></tr>
+<tr>
+<th style="empty-cells: hide;" colspan="1"></th>
+<th style="padding-bottom:0; padding-left:3px;padding-right:3px;text-align: center; " colspan="2"><div style="border-bottom: 1px solid #eee; padding-bottom: 16px; padding-top: 16px; height: 56px;">Performance</div></th>
+</tr>
+  <tr>
+   <th style="text-align:right;"> N </th>
+   <th style="text-align:right;"> Administrative Unit Concordance (% Agreement at Tract) </th>
+   <th style="text-align:right;"> Median Spatial Accuracy (m) </th>
+  </tr>
+ </thead>
+<tbody>
+  <tr>
+   <td style="text-align:right;"> 274,099 </td>
+   <td style="text-align:right;"> 86 </td>
+   <td style="text-align:right;"> 79 </td>
+  </tr>
+</tbody>
+</table>
+
+</div>
+</div>
+</section>
+</section>
+</section>
+<section id="discussion" class="level2">
+<h2 class="anchored" data-anchor-id="discussion">Discussion</h2>
+<p><em>To Do: What does it all mean???</em></p>
+</section>
+<section id="citations" class="level2">
+<h2 class="anchored" data-anchor-id="citations">Citations</h2>
+<p><em>To Do: Cite Nominatim, UW PostGIS?</em></p>
+<!-- citations auto generated here -->
+<div id="refs" class="references csl-bib-body hanging-indent" role="doc-bibliography">
+<div id="ref-fcc_cite" class="csl-entry" role="doc-biblioentry">
+<span>“2.5 <span>GHz</span> Rural Tribal Maps <span></span> Federal Communications Commission.”</span> n.d. Accessed October 10, 2024. <a href="https://www.fcc.gov/25-ghz-rural-tribal-maps">https://www.fcc.gov/25-ghz-rural-tribal-maps</a>.
+</div>
+<div id="ref-degauss_cite" class="csl-entry" role="doc-biblioentry">
+Brokamp, Cole, Chris Wolfe, Todd Lingren, John Harley, and Patrick Ryan. 2018. <span>“Decentralized and Reproducible Geocoding and Characterization of Community and Environmental Exposures for Multisite Studies.”</span> <em>Journal of the American Medical Informatics Association</em> 25 (3): 309–14. <a href="https://doi.org/10.1093/jamia/ocx128">https://doi.org/10.1093/jamia/ocx128</a>.
+</div>
+<div id="ref-goldberg_cite" class="csl-entry" role="doc-biblioentry">
+Goldberg, Daniel W., Morven Ballard, James H. Boyd, Narelle Mullan, Carol Garfield, Diana Rosman, Anna M. Ferrante, and James B. Semmens. 2013. <span>“An Evaluation Framework for Comparing Geocoding Systems.”</span> <em>International Journal of Health Geographics</em> 12 (1): 1–15. <a href="https://doi.org/10.1186/1476-072X-12-50">https://doi.org/10.1186/1476-072X-12-50</a>.
+</div>
+<div id="ref-ruca_cite" class="csl-entry" role="doc-biblioentry">
+<span>“<span>USDA</span> <span>ERS</span> - Rural-Urban Commuting Area Codes.”</span> n.d. Accessed October 10, 2024. <a href="https://www.ers.usda.gov/data-products/rural-urban-commuting-area-codes/">https://www.ers.usda.gov/data-products/rural-urban-commuting-area-codes/</a>.
+</div>
+</div>
+</section>
+</main>
+<!-- /main column -->
+<script type="application/javascript">
+window.document.addEventListener("DOMContentLoaded", function (event) {
+  const icon = "";
+  const anchorJS = new window.AnchorJS();
+  anchorJS.options = {
+    placement: 'right',
+    icon: icon
+  };
+  anchorJS.add('.anchored');
+  const clipboard = new window.ClipboardJS('.code-copy-button', {
+    target: function(trigger) {
+      return trigger.previousElementSibling;
+    }
+  });
+  clipboard.on('success', function(e) {
+    // button target
+    const button = e.trigger;
+    // don't keep focus
+    button.blur();
+    // flash "checked"
+    button.classList.add('code-copy-button-checked');
+    setTimeout(function() {
+      button.classList.remove('code-copy-button-checked');
+    }, 1000);
+    // clear code selection
+    e.clearSelection();
+  });
+  function tippyHover(el, contentFn) {
+    const config = {
+      allowHTML: true,
+      content: contentFn,
+      maxWidth: 500,
+      delay: 100,
+      arrow: false,
+      appendTo: function(el) {
+          return el.parentElement;
+      },
+      interactive: true,
+      interactiveBorder: 10,
+      theme: 'quarto',
+      placement: 'bottom-start'
+    };
+    window.tippy(el, config); 
+  }
+  const noterefs = window.document.querySelectorAll('a[role="doc-noteref"]');
+  for (var i=0; i<noterefs.length; i++) {
+    const ref = noterefs[i];
+    tippyHover(ref, function() {
+      let href = ref.getAttribute('href');
+      try { href = new URL(href).hash; } catch {}
+      const id = href.replace(/^#\/?/, "");
+      const note = window.document.getElementById(id);
+      return note.innerHTML;
+    });
+  }
+  var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
+  for (var i=0; i<bibliorefs.length; i++) {
+    const ref = bibliorefs[i];
+    const cites = ref.parentNode.getAttribute('data-cites').split(' ');
+    tippyHover(ref, function() {
+      var popup = window.document.createElement('div');
+      cites.forEach(function(cite) {
+        var citeDiv = window.document.createElement('div');
+        citeDiv.classList.add('hanging-indent');
+        citeDiv.classList.add('csl-entry');
+        var biblioDiv = window.document.getElementById('ref-' + cite);
+        if (biblioDiv) {
+          citeDiv.innerHTML = biblioDiv.innerHTML;
+        }
+        popup.appendChild(citeDiv);
+      });
+      return popup.innerHTML;
+    });
+  }
+});
+</script>
+</div> <!-- /content -->
+
+
+</body></html>
