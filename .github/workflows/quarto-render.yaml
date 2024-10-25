@@ -20,8 +20,7 @@ jobs:
         with:
           context: .
           file: Dockerfile
-          push: false  # Change to true if you want to push the image
-          tags: quarto-render
+          push: false
       - name: Commit HTML output
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
