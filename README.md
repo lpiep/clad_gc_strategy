@@ -6,4 +6,4 @@ See report at `geocoder_evaluation.html`.
 
 If re-geocoding, UW RIT's geocoders must be on and you must be sending requests from a whitelisted IP. 
 
-If not, run scripts labeled 2-6 to rebuild analytic data sets, then render the quarto document. 
+If not, run scripts labeled 2-5 to rebuild analytic data sets, then render the quarto document. 
