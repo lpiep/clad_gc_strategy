@@ -14,14 +14,14 @@ jobs:
     steps:
       - name: Check out code
         uses: actions/checkout@v4
-        
+
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
           context: .
           file: Dockerfile
           push: false
-          
+
       - name: Commit HTML output
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
